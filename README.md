@@ -1,33 +1,30 @@
-# Baston TV — prototype 0.10
+# Baston TV — prototype 0.12
+
+Jeu PWA en HTML/CSS/JavaScript, jouable dans un navigateur et installable depuis GitHub Pages.
+
+## Nouveautés de la version 0.12
+
+- **6 stades** pour les Bourrins : Bébé Bourrin (nouvelle illustration), Paumé, Balourd, Cogneur, Titan, Quadri-Poings (effet de gants provisoire pour la dernière forme).
+- **Sauvegardes v0.11 migrées automatiquement** : les anciens personnages gardent une apparence équivalente ; le niveau 5 « Mastodonte » provisoire devient un Titan niveau 5.
+- **Entraînement plus exigeant** : moins de 3 touches = 0 équipement ; 3 à 7 = 1 ; 8 ou plus = 2. Un combo d'au moins 8 sans faute offre un bonus, un combo de 13 sans faute offre un second bonus (4 maximum).
+- **Fini les œufs quotidiens** : un œuf toutes les sept victoires, à récupérer depuis l'incubateur. Les outils de test des œufs sont réservés au mode développeur.
+- **Paramètres** en haut : volumes séparés pour menus et effets ; futur volume musical mémorisé, mais pas de bande-son pour le moment.
+- **Codes** : `Test0.12` donne 100 gemmes une fois par navigateur ; `DEV0.12` active le mode développeur (ajouts de gemmes/pièces et œufs de test).
+- **Réinitialiser la partie** : deux confirmations obligatoires, dont la saisie exacte `REINITIALISER`.
 
 ## Démarrer en local
 
-1. Décompresse le ZIP.
-2. Ouvre le dossier `BastonTV_PWA_v0.10` dans VS Code.
-3. Clic droit sur `index.html` → Open with Live Server.
+1. Décompresser le ZIP puis ouvrir le dossier avec Visual Studio Code.
+2. Installer l'extension Live Server si nécessaire.
+3. Clic droit sur `index.html` → **Open with Live Server**.
 
-## Corrections v0.10
+## Publier sur GitHub Pages
 
-- Les shinies sont positionnés à la même hauteur que les normaux dans l’arène et ne sont plus coupés en haut par la règle CSS de l’aura.
-- Les textes de dégâts sont placés dans l’arène (en dehors de l’image retournée) : ceux infligés et ceux reçus sont lisibles dans le bon sens.
-- Bouton **📲 Installer Baston TV** sur l’accueil : boîte native si le navigateur prend en charge `beforeinstallprompt`, instructions adaptées pour les autres appareils (notamment iPhone).
-- Manifeste et service worker vérifiés pour un hébergement sous `/baston-tv/` sur GitHub Pages.
+Décompresser le ZIP GitHub Pages (fichiers à la racine) puis envoyer tous les fichiers et le dossier `assets/` dans ton dépôt `baston-tv` via **Add file → Upload files**, sans envoyer le ZIP. Vérifier **Settings → Pages → Deploy from a branch → main / (root)**. Attendre la fin du déploiement dans Actions.
 
-## Publier sur GitHub Pages (sans Git en ligne de commande)
+## Précautions
 
-1. Ouvre ton dépôt `baston-tv` sur GitHub, puis `Add file` → `Upload files`.
-2. **Dépose le contenu du dossier** `BastonTV_PWA_v0.10`, pas le ZIP ni le dossier enveloppe. `index.html` doit être directement à la racine de `baston-tv`.
-3. Termine avec `Commit changes`.
-4. `Settings` → `Pages` → Source = `Deploy from a branch`, Branch = `main`, Folder = `/(root)` → Save.
-5. Une fois le déploiement réussi, ouvre `https://drajibus84.github.io/baston-tv/` sur téléphone (HTTPS requis pour l'installation de PWA).
-6. Sur Chrome Android, utilise le bouton **Installer** du jeu. Sur iPhone, utilise le menu Partager → Sur l'écran d'accueil.
-
-Si le site retourne une erreur 404 : vérifie le fichier `index.html` à la racine, la branche `main` et le résultat du déploiement dans l’onglet `Actions`.
-
-## Sauvegarde
-
-La sauvegarde locale est conservée avec la clé `bastontv-save-v03`. Cependant, `localhost:5500` et `https://drajibus84.github.io` ne partagent pas leurs sauvegardes : sur ton téléphone tu commenceras une nouvelle partie. Le prototype ne synchronise pas encore les données entre appareils.
-
-## Remarque
-
-Le bouton d’installation ne s’affiche pas dans les vues autres que l’accueil. Sur certains navigateurs, l’invite native n’existe pas : les instructions de l’app apparaissent alors.
+- Le jeu ne possède pas de serveur : les sauvegardes et les codes sont locaux à chaque navigateur/appareil.
+- Les codes sont présents dans le JavaScript public : **ne pas les considérer comme secrets ou sécurisés**. Désactiver le mode développeur et retirer son code pour une vraie sortie publique.
+- Réinitialiser le compte efface la progression locale, mais ne remet pas à zéro les codes cadeaux déjà utilisés sur cet appareil.
+- Le réglage « musique » est prévu mais aucun fichier musical n'est joué en v0.12.

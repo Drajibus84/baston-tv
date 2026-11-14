@@ -200,3 +200,47 @@
 .install-dialog ul{padding-left:22px;font-size:14px;line-height:1.55;}
 .install-close{display:block;width:100%;margin-top:14px;padding:12px 18px;border:0;border-radius:12px;color:white;font-weight:900;background:#7836c2;}
 @media(max-width:365px){.install-panel{padding:12px}}
+
+
+/* v0.11 — 6 niveaux et deux silhouettes provisoires en attendant l'art final. */
+.evolution-roadmap-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.roadmap-step{border:2px solid #e5d8f8;border-radius:12px;background:#faf7ff;padding:10px;display:flex;flex-direction:column;gap:3px;color:#6c5b84}
+.roadmap-step strong{font-size:12px;line-height:1.2}.roadmap-step small,.roadmap-step span{font-size:10px}
+.roadmap-unlocked{border-color:#efc24f;background:#fff8df;color:#58226f}
+.fighter-onair,.locker-character,.gym-roster-fighter,.gym-companion-actor,.fight-actor{position:relative}
+.fight-arena .fight-actor,.fight-preview .fight-actor{position:absolute}
+.evolution-emblem{position:absolute;z-index:5;pointer-events:none;text-shadow:0 2px 2px #2c1044;line-height:1}
+.evolution-five{top:1%;left:50%;transform:translateX(-50%) rotate(-7deg);font-size:24px;animation:crown-bounce 1.35s ease-in-out infinite alternate}
+.evolution-six{top:33%;left:4%;right:4%;display:flex;justify-content:space-between;align-items:center;z-index:6;filter:drop-shadow(0 2px 3px #3a164e);animation:extra-gloves 1.4s ease-in-out infinite alternate}
+.evolution-six span{display:block;font-size:27px;transform:rotate(-25deg)}.evolution-six span+span{transform:rotate(35deg)}
+.fighter-onair.evolution-5 img,.locker-character.evolution-5 img,.gym-roster-fighter.evolution-5 img{filter:drop-shadow(0 0 6px #fd9b3b)}
+.fighter-onair.evolution-6 img,.locker-character.evolution-6 img,.gym-roster-fighter.evolution-6 img{filter:drop-shadow(0 0 7px #b87aff)}
+.fighter-onair .evolution-five{top:9%}.fighter-onair .evolution-six{top:37%;left:0;right:0}
+.locker-character .evolution-five{top:1%;font-size:16px}.locker-character .evolution-six{top:36%;left:0;right:0}.locker-character .evolution-six span{font-size:15px}
+.gym-roster-fighter .evolution-five{top:8%;font-size:16px}.gym-roster-fighter .evolution-six{top:33%}.gym-roster-fighter .evolution-six span{font-size:15px}
+.gym-companion-actor .evolution-five{top:10%;font-size:16px}.gym-companion-actor .evolution-six{top:46%;left:0;right:0}.gym-companion-actor .evolution-six span{font-size:16px}
+.fight-actor .evolution-five{top:10%;font-size:22px}.fight-actor .evolution-six{top:50%;left:-3%;right:-3%}
+@keyframes crown-bounce{to{transform:translate(-50%,-4px) rotate(6deg)}}
+@keyframes extra-gloves{to{transform:scale(1.06) translateY(-4px)}}
+@media(max-width:360px){.evolution-roadmap-grid{gap:5px}.roadmap-step{padding:8px}}
+@media(prefers-reduced-motion:reduce){.evolution-five,.evolution-six{animation:none!important}}
+
+/* v0.12 — paramètres, nouvel ordre des illustrations, nouvelles récompenses */
+.settings-toggle{display:flex;align-items:center;justify-content:center;border:2px solid #a970ff;background:#2b115d;color:white;border-radius:13px;padding:6px;font-size:22px;min-width:37px;min-height:38px;line-height:1}
+.settings-toggle.selected{background:#ffd953;color:#331056;border-color:#ffeab0}
+.settings-card h2,.reset-panel h2,.dev-panel h2{margin-bottom:12px}
+.settings-slider{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;font-weight:850;color:#552c80;margin:15px 0 6px}
+.settings-slider strong{white-space:nowrap;font-variant-numeric:tabular-nums}
+.volume-range{display:block;width:100%;height:24px;accent-color:#7d35d1;cursor:pointer}
+.code-form{display:flex;gap:8px;align-items:center}
+.code-form input{min-width:0;flex:1;border:2px solid #c6a4e6;border-radius:12px;background:#faf7ff;color:#331750;font:inherit;font-size:15px;padding:12px 10px}
+.code-form .action{width:auto;min-width:95px;margin:0;white-space:nowrap;padding:11px 12px}
+.dev-panel{border-color:#70d6a4;background:linear-gradient(#f1fff8,#f9f2ff)}
+.dev-add{display:flex;gap:8px;align-items:end;margin:9px 0}.dev-add label{flex:1;min-width:0;font-size:12px;font-weight:850}
+.dev-add input{display:block;width:100%;margin-top:4px;padding:9px;border:2px solid #d8beee;border-radius:9px;font-size:14px}
+.dev-add .action{width:auto;margin:0;padding:10px 11px;font-size:12px}
+.dev-eggs{display:grid;grid-template-columns:1fr 1fr;gap:8px}.dev-eggs .action{font-size:12px;padding:10px 6px}
+.reset-panel{border-color:#edb5c0}.reset-button{background:linear-gradient(#ff9aa4,#eb435c);color:#fff;border-color:#8d2855}
+.reward-empty{color:#895a8f;font-size:13px;font-weight:750}
+@media(max-width:440px){.header-tools{gap:3px}.header-tools .money{padding:6px}.settings-toggle{min-width:32px;font-size:19px;padding:5px}.brand strong{font-size:16px}.brand-icon{font-size:23px}}
+@media(max-width:365px){.brand-icon{display:none}.money{font-size:11px}.settings-toggle{min-width:29px}.code-form{flex-direction:column;align-items:stretch}.code-form .action{width:100%}}

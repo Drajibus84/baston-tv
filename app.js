@@ -1,8 +1,10 @@
-/* Baston TV — Prototype 0.10. Aucun framework, ni serveur, ni compte requis. */
+/* Baston TV — Prototype 0.12. Aucun framework, ni serveur, ni compte requis. */
 "use strict";
 
 const SAVE_KEY = "bastontv-save-v03";
-const TRAINING_COST = 100;
+const BASE_TRAINING_COST = 100;
+const TRAINING_INCREASE_EVERY = 3;
+const TRAINING_INCREASE_AMOUNT = 20;
 const TRAINING_MS = 20_000;
 const SPOT_LIFETIME_MS = 980;
 const MISS_PENALTY_MS = 700;
@@ -17,13 +19,16 @@ const SHINY_RATE = 0.30;
 const GEM_START = 10;
 const GEM_ACCEL_COST = 5;
 const GEM_ACCEL_MS = 30 * 60_000;
-const WINS_PER_EGG = 3;
+const WINS_PER_EGG = 7;
 const LEVELS = [null,
-  { name: "Le Paumé", income: 5 },
-  { name: "Le Balourd", income: 12 },
-  { name: "Le Cogneur", income: 30 },
-  { name: "Le Titan", income: 75 }
+  { name: "Bébé Bourrin", income: 3 },
+  { name: "Le Paumé", income: 7 },
+  { name: "Le Balourd", income: 16 },
+  { name: "Le Cogneur", income: 40 },
+  { name: "Le Titan", income: 100 },
+  { name: "Le Quadri-Poings", income: 430 }
 ];
+const MAX_FIGHTER_LEVEL = LEVELS.length - 1;
 const EQUIPMENT = [
   { id: "gants", label: "Gants", icon: "🥊" },
   { id: "bandeau", label: "Bandeau", icon: "🎗️" },
@@ -32,7 +37,14 @@ const EQUIPMENT = [
 ];
 const now = () => Date.now();
 const format = n => Math.floor(n).toLocaleString("fr-FR");
-const imageFor = level => `./assets/boxeur-${level}.png`;
+// Bébé Bourrin est une nouvelle illustration ; les quatre dessins originaux
+// sont décalés d'un stade. Le niveau 6 conserve son effet visuel provisoire.
+const imageFor = level => `./assets/boxeur-${Math.min(level, MAX_FIGHTER_LEVEL)}.png`;
+const evolutionClass = level => level === 6 ? ' evolution-6' : '';
+function evolutionDecoration(level) {
+  if (level === 6) return '<span class="evolution-emblem evolution-six" aria-hidden="true"><span>🥊</span><span>🥊</span></span>';
+  return '';
+}
 const getNewId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function freshSave() {
@@ -46,7 +58,11 @@ function freshSave() {
     gems: GEM_START,
     combatWins: 0,
     pendingCombatEggs: 0,
-    gymCompanionId: null
+    gymCompanionId: null,
+    eggs: [],
+    shinyAlbum: {},
+    schemaVersion: 12,
+    devMode: false
   };
 }
 function loadSave() {
@@ -57,9 +73,28 @@ function loadSave() {
   return freshSave();
 }
 let game = loadSave();
-// Migration douce depuis v0.7 : on ne touche ni aux pièces ni aux personnages.
+// Migration unique : on garde l'apparence des anciennes recrues.
+// v0.11 : Paumé(1)→2, Balourd(2)→3, Cogneur(3)→4, Titan(4)→5 ;
+// le Mastodonte provisoire(5) garde le stade 5 et Quadri-Poings(6) reste 6.
+if ((game.schemaVersion || 0) < 12) {
+  const previousToNew = [0, 2, 3, 4, 5, 5, 6];
+  game.fighters.forEach(f => { f.level = previousToNew[f.level] || 1; });
+  if (game.shinyAlbum && typeof game.shinyAlbum === 'object') {
+    const migratedAlbum = {};
+    Object.entries(game.shinyAlbum).forEach(([level, found]) => {
+      if (found) migratedAlbum[previousToNew[Number(level)] || 1] = true;
+    });
+    game.shinyAlbum = migratedAlbum;
+  }
+  if (Array.isArray(game.eggs)) {
+    game.eggs.forEach(e => { if (e.level) e.level = previousToNew[e.level] || 1; });
+  }
+  game.schemaVersion = 12;
+}
 game.fighters.forEach(f => { f.shiny = Boolean(f.shiny); });
+if (typeof game.devMode !== 'boolean') game.devMode = false;
 if (!Array.isArray(game.eggs)) game.eggs = [];
+if (!Number.isFinite(game.sessions) || game.sessions < 0) game.sessions = 0;
 if (typeof game.lastDailyEgg !== 'string') game.lastDailyEgg = '';
 if (!Number.isFinite(game.gems) || game.gems < 0) game.gems = GEM_START;
 if (!Number.isFinite(game.combatWins) || game.combatWins < 0) game.combatWins = 0;
@@ -76,8 +111,24 @@ let toastTimeout = null;
 // Sons proceduraux : aucun MP3 à installer et aucune requête réseau.
 // Le navigateur autorise les sons après une interaction de l'utilisateur.
 const SOUND_KEY = "bastontv-sound-enabled";
+const AUDIO_SETTINGS_KEY = "bastontv-audio-v012";
+const REDEEMED_CODES_KEY = "bastontv-used-codes-v012";
 let soundEnabled = (() => { try { return localStorage.getItem(SOUND_KEY) !== "false"; } catch (_) { return true; } })();
+function getSavedAudioSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(AUDIO_SETTINGS_KEY) || '{}');
+    return {
+      menus: Number.isFinite(saved.menus) ? Math.max(0,Math.min(100,saved.menus)) : 70,
+      effects: Number.isFinite(saved.effects) ? Math.max(0,Math.min(100,saved.effects)) : 85,
+      music: Number.isFinite(saved.music) ? Math.max(0,Math.min(100,saved.music)) : 50
+    };
+  } catch (_) { return {menus:70,effects:85,music:50}; }
+}
+let audioSettings = getSavedAudioSettings();
 let audioCtx = null;
+let sfxGain = null;
+let redeemedCodes = (()=>{try{return JSON.parse(localStorage.getItem(REDEEMED_CODES_KEY)||'[]')}catch(_){return []}})();
+if (!Array.isArray(redeemedCodes)) redeemedCodes=[];
 let noiseBuffer = null;
 
 // Sons d'impact courts enregistrés en fichiers audio (synthèse percussive).
@@ -109,7 +160,7 @@ function playSample(kind) {
   try {
     clip.pause();
     clip.currentTime = 0;
-    clip.volume = SAMPLE_VOLUMES[kind] ?? .5;
+    clip.volume = Math.min(1,(SAMPLE_VOLUMES[kind] ?? .5) * (kind==='ui'||kind==='confirm' ? audioSettings.menus : audioSettings.effects)/100);
     const played = clip.play();
     if (played && played.catch) played.catch(() => {});
   } catch (_) { /* Son non pris en charge : le jeu continue sans audio. */ }
@@ -131,6 +182,9 @@ function getAudioContext() {
   try {
     if (!audioCtx) {
       audioCtx = new AudioApi();
+      sfxGain = audioCtx.createGain();
+      sfxGain.gain.value = audioSettings.effects / 100;
+      sfxGain.connect(audioCtx.destination);
       // Petit bruit synthétique à bande large pour les impacts de gant.
       noiseBuffer = audioCtx.createBuffer(1, Math.ceil(audioCtx.sampleRate * .24), audioCtx.sampleRate);
       const data = noiseBuffer.getChannelData(0);
@@ -149,7 +203,7 @@ function soundTone(ctx, t, a, b, duration, level, wave="triangle") {
   gain.gain.setValueAtTime(.0001, t);
   gain.gain.exponentialRampToValueAtTime(Math.max(.001, level), t + .009);
   gain.gain.exponentialRampToValueAtTime(.0001, t + duration);
-  osc.connect(gain).connect(ctx.destination);
+  osc.connect(gain).connect(sfxGain || ctx.destination);
   osc.start(t); osc.stop(t + duration + .012);
 }
 function soundNoise(ctx, t, duration, level, cutoff) {
@@ -159,7 +213,7 @@ function soundNoise(ctx, t, duration, level, cutoff) {
   const gain=ctx.createGain();
   gain.gain.setValueAtTime(Math.max(.001,level), t);
   gain.gain.exponentialRampToValueAtTime(.0001, t+duration);
-  src.connect(filter).connect(gain).connect(ctx.destination);
+  src.connect(filter).connect(gain).connect(sfxGain || ctx.destination);
   src.start(t); src.stop(t+duration);
 }
 function playSound(kind) {
@@ -253,6 +307,13 @@ function readableDuration(ms) {
   const h=Math.floor(seconds/3600), m=Math.floor((seconds%3600)/60), sec=seconds%60;
   return h ? `${h} h ${String(m).padStart(2,'0')} min` : `${m} min ${String(sec).padStart(2,'0')} s`;
 }
+// La progression reste possible même avec peu de pièces :
+// +20 pièces toutes les 3 séances réalisées, +30 par stade au-dessus de 2.
+function trainingCost() {
+  const best = Math.max(1, ...game.fighters.map(f => f.level));
+  const rounds = Math.floor(game.sessions / TRAINING_INCREASE_EVERY);
+  return Math.min(3500, BASE_TRAINING_COST + TRAINING_INCREASE_AMOUNT * rounds + 30 * Math.max(0, best - 2));
+}
 function incomePerMinute() {
   const twoBest = [...game.fighters].sort((a, b) => b.level - a.level).slice(0, 2);
   const basic = twoBest.reduce((sum, fighter) => sum + LEVELS[fighter.level].income, 0);
@@ -298,17 +359,17 @@ function chooseGymCompanion(id) {
 }
 function gymCompanionHtml(fighter) {
   if (!fighter) return '';
-  return `<div class="gym-companion-actor ${fighter.shiny?'shiny-actor':''}" aria-label="${LEVELS[fighter.level].name}${fighter.shiny?' shiny':''} t'accompagne">
-    <img class="gym-boxer breathing" id="gym-boxer" src="${imageFor(fighter.level)}" alt="${LEVELS[fighter.level].name}${fighter.shiny?' shiny':''}">
+  return `<div class="gym-companion-actor ${fighter.shiny?'shiny-actor':''}${evolutionClass(fighter.level)}" aria-label="${LEVELS[fighter.level].name}${fighter.shiny?' shiny':''} t'accompagne">
+    <img class="gym-boxer breathing" id="gym-boxer" src="${imageFor(fighter.level)}" alt="${LEVELS[fighter.level].name}${fighter.shiny?' shiny':''}">${evolutionDecoration(fighter.level)}
   </div>`;
 }
 function gymRosterHtml(companion) {
   return `<section class="card gym-choice-panel"><h2>🥊 Choisir mon accompagnateur</h2>
       <p class="muted">Choisis librement un boxeur, même shiny ou niveau 1. Cela ne modifie ni ses statistiques ni les revenus TV.</p>
       <div class="gym-roster" role="group" aria-label="Choix du boxeur pour l'entraînement">${game.fighters.map(f=>`
-        <button class="gym-roster-fighter ${companion?.id===f.id?'is-selected':''} ${f.shiny?'shiny-fighter':''}" type="button" data-action="choose-companion" data-fighter-id="${f.id}"
+        <button class="gym-roster-fighter ${companion?.id===f.id?'is-selected':''} ${f.shiny?'shiny-fighter':''}${evolutionClass(f.level)}" type="button" data-action="choose-companion" data-fighter-id="${f.id}"
           aria-pressed="${String(companion?.id===f.id)}" aria-label="Choisir ${LEVELS[f.level].name}, évolution ${f.level}${f.shiny?', shiny':''}">
-          <img src="${imageFor(f.level)}" alt=""><strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong><small>Niv. ${f.level}</small>
+          <img src="${imageFor(f.level)}" alt="">${evolutionDecoration(f.level)}<strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong><small>Niv. ${f.level}</small>
           <span class="gym-roster-check">${companion?.id===f.id?'✓ Sélectionné':'Choisir'}</span>
         </button>`).join('')}</div>
     </section>`;
@@ -346,18 +407,26 @@ function homeScreen() {
     <div class="tv-stage" aria-label="Boxe TV en direct">
       <span class="live-label">● EN DIRECT</span>
       <div class="viewers-live" aria-label="Audience simulée en direct">👥 <b id="viewers-live">${format(currentAudience())}</b> <small id="viewers-change" class="viewers-change up">• 0</small></div><div class="stage-logo">BASTON <span>TV</span></div>
-      <div class="on-air">${onAir.map(f => `<div class="fighter-onair ${f.shiny?'shiny-fighter':''}"><img class="breathing" src="${imageFor(f.level)}" alt="${LEVELS[f.level].name}${f.shiny?' shiny':''}"><strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong></div>`).join("")}
+      <div class="on-air">${onAir.map(f => `<div class="fighter-onair ${f.shiny?'shiny-fighter':''}${evolutionClass(f.level)}"><img class="breathing" src="${imageFor(f.level)}" alt="${LEVELS[f.level].name}${f.shiny?' shiny':''}">${evolutionDecoration(f.level)}<strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong></div>`).join("")}
       ${onAir.length < 2 ? '<div class="empty-slot">Place libre</div>' : ''}</div>
     </div>
     <div class="stat-grid"><div class="stat"><small>📈 Revenus TV</small><b id="rate-live">+${format(incomePerMinute())}/min</b><small>En jeu et hors ligne (8 h max.)</small></div>
     <div class="stat"><small>🎬 Niveau du studio</small><b>${game.studioLevel}</b><small>Bonus : +${25 * (game.studioLevel - 1)} %</small></div></div>
-    <div class="tv-shiny-caption">✨ Découvertes shiny : ${shinyBonusPercent()} / 4 · Bonus permanent : +${shinyBonusPercent()} % aux revenus TV</div>
+    <div class="tv-shiny-caption">✨ Découvertes shiny : ${shinyBonusPercent()} / ${MAX_FIGHTER_LEVEL} · Bonus permanent : +${shinyBonusPercent()} % aux revenus TV</div>
     <button type="button" class="action secondary" data-action="go-gym">🥊 Aller s'entraîner</button>
     <button type="button" class="action pink" data-action="go-combat">⚔️ Essayer le combat animé !</button>
     <section class="card"><h2>🔧 Améliorer le studio</h2><p class="muted">Augmente de 25 % les revenus de tes émissions. Les nouvelles évolutions rapportent encore plus.</p>
     <div class="price"><span>Coût du prochain niveau</span><span>🪙 ${format(nextCost)}</span></div>
     <button class="action" type="button" data-action="upgrade" ${game.studioLevel >= 5 || Math.floor(game.coins) < nextCost ? "disabled" : ""}>${game.studioLevel >= 5 ? "Niveau maximal du prototype" : "Améliorer (+25 %)"}</button></section>
-    <div class="tip"><strong>💡 Astuce :</strong> deux Paumés rapportent 10 pièces/min. En les fusionnant, un Balourd rapporte 12 pièces/min, tout en libérant une place à l'antenne !</div>
+    <div class="tip"><strong>💡 Astuce :</strong> deux Bébés Bourrins rapportent 6 pièces/min. En les fusionnant, un Paumé rapporte 7 pièces/min : pense à occuper les deux places TV pour maximiser tes revenus !</div>
+    <section class="card evolution-roadmap"><h2>🥊 Évolutions des Bourrins</h2>
+      <p class="muted">Six stades à débloquer. Pour fabriquer un niveau 6 uniquement avec des recrues niveau 1, il en faut <b>32</b> !</p>
+      <div class="evolution-roadmap-grid">${LEVELS.slice(1).map((info,index) => {
+        const level=index+1, unlocked=game.fighters.some(f=>f.level>=level);
+        return `<div class="roadmap-step ${unlocked?'roadmap-unlocked':''}"><small>Stade ${level}</small><strong>${unlocked?'✓ ':'🔒 '}${info.name}</strong><span>+${info.income} 🪙/min</span></div>`;
+      }).join('')}</div>
+      <p class="subnote">Le bébé est un nouveau dessin ; le niveau 6 utilise encore une silhouette provisoire et des gants supplémentaires.</p>
+    </section>
     <section class="install-panel" id="install-panel"><h2>📱 Baston TV sur ton téléphone</h2>
       <p>Installe le jeu depuis ton navigateur pour le retrouver sur ton écran d’accueil.</p>
       <button class="action secondary" type="button" data-action="install-app" id="install-app-button">📲 Installer Baston TV</button></section>`;
@@ -370,16 +439,17 @@ function gymScreen() {
     <div class="bag-arena" id="bag-arena" style="margin-top:12px"><span class="gym-status" id="gym-status">Vise la cible !</span><div class="bag-cable"></div>${gymCompanionHtml(training.companion || companion)}<div class="bag" id="bag"><button class="spot" id="spot" data-action="hit" aria-label="Frapper le point faible" style="left:50%;top:45%"></button></div></div>
     <p class="muted">Le point faible change de place. Si tu rates ou si tu cliques à côté, tu perds du temps !</p>
     <p class="subnote">⏳ Cible expirée : −0,7 s · Mauvais clic : −0,5 s · 5 touches de suite = bonus</p>`;
-  const result = latestReward ? `<section class="card"><h2>🎁 Dernière séance</h2><p class="muted">${latestReward.hits} point(s) touché(s) · meilleur combo : ${latestReward.best} · erreurs : ${latestReward.misses}</p><div class="reward-list">${latestReward.items.map(id => `<span class="reward-bubble">${EQUIPMENT.find(x => x.id === id).icon} ${EQUIPMENT.find(x => x.id === id).label}</span>`).join("")}</div></section>` : "";
+  const result = latestReward ? `<section class="card"><h2>🎁 Dernière séance</h2><p class="muted">${latestReward.hits} point(s) touché(s) · meilleur combo : ${latestReward.best} · erreurs : ${latestReward.misses}</p><div class="reward-list">${latestReward.items.length?latestReward.items.map(id => `<span class="reward-bubble">${EQUIPMENT.find(x => x.id === id).icon} ${EQUIPMENT.find(x => x.id === id).label}</span>`).join(""):'<span class="reward-empty">Aucun équipement cette fois. Tu feras mieux au prochain essai !</span>'}</div></section>` : "";
   return `<span class="kicker">🎯 Les coulisses</span><h1 class="h1">Salle d'entraînement</h1>
     <p class="muted">Les points faibles sont plus espacés. Il faut être rapide et précis : les erreurs te font perdre du temps.</p>
     <div class="bag-arena"><div class="bag-cable"></div>${gymCompanionHtml(companion)}<div class="bag"><div class="spot" style="left:49%;top:34%;pointer-events:none"></div></div></div>
     ${gymRosterHtml(companion)}
-    <div class="stat-grid"><div class="stat"><small>⏱ Durée</small><b>20 s</b></div><div class="stat"><small>🪙 Prix</small><b>100</b></div></div>
-    <button class="action" type="button" data-action="start-training" ${Math.floor(game.coins) < TRAINING_COST ? "disabled" : ""}>🥊 Commencer la séance</button>
-    ${Math.floor(game.coins) < TRAINING_COST ? '<p class="subnote">Pas assez de pièces. Laisse ta chaîne en produire un peu, puis reviens !</p>' : ''}
+    <div class="stat-grid"><div class="stat"><small>⏱ Durée</small><b>20 s</b></div><div class="stat"><small>🪙 Prix actuel</small><b>${format(trainingCost())}</b></div></div>
+    <p class="subnote">Le prix augmente de 20 pièces toutes les 3 séances, puis de 30 pièces supplémentaires à chaque nouvelle évolution au-delà du niveau 2.</p>
+    <button class="action" type="button" data-action="start-training" ${Math.floor(game.coins) < trainingCost() ? "disabled" : ""}>🥊 Commencer la séance · ${format(trainingCost())} 🪙</button>
+    ${Math.floor(game.coins) < trainingCost() ? '<p class="subnote">Pas assez de pièces. Laisse ta chaîne en produire un peu, puis reviens !</p>' : ''}
     ${result}
-    <div class="tip"><strong>Comment ça marche ?</strong> Vise les cibles avant qu'elles disparaissent. Chaque faute retire du temps et interrompt le combo. Un combo de 5 rapporte un équipement bonus.</div>`;
+    <div class="tip"><strong>Récompenses :</strong> 0 équipement pour un score très faible ; sinon 1 à 2. Tu peux gagner jusqu'à 4 équipements si tu réalises un excellent combo <b>sans aucune faute</b>. Chaque faute retire du temps et brise le combo.</div>`;
 }
 function lockerCharacter(fighter, index, onAir=false) {
   const level = fighter.level;
@@ -388,7 +458,7 @@ function lockerCharacter(fighter, index, onAir=false) {
   const delay = ((index * 73) % 17) / 10;
   const duration = 3.2 + (index % 4) * .45;
   return `<div class="locker-fighter ${onAir ? 'locker-on-air' : 'locker-wander'}" data-fighter-id="${fighter.id}" data-fighter-level="${level}" data-fighter-shiny="${fighter.shiny?'true':'false'}" tabindex="0" role="button" aria-label="${LEVELS[level].name} niveau ${level}${fighter.shiny?' shiny':''}. Glisse sur un autre combattant du même niveau et de la même rareté pour fusionner" style="--lx:${x}%;--floor-bottom:${floor}px;--delay:-${delay}s;--distance:${6+(index%4)*4}px;--duration:${duration}s">
-    <div class="locker-character ${fighter.shiny?'is-shiny':''}"><img src="${imageFor(level)}" draggable="false" alt=""><span class="locker-level">${fighter.shiny?'✨ ':''}Niv. ${level}</span></div>
+    <div class="locker-character ${fighter.shiny?'is-shiny':''}${evolutionClass(level)}"><img src="${imageFor(level)}" draggable="false" alt="">${evolutionDecoration(level)}<span class="locker-level">${fighter.shiny?'✨ ':''}Niv. ${level}</span></div>
     <span class="locker-name">${fighter.shiny?'✨ ':''}${LEVELS[level].name}</span></div>`;
 }
 function collectionScreen() {
@@ -400,7 +470,7 @@ function collectionScreen() {
   const rows=Math.max(1,Math.ceil(display.length/3));
   const rest=others.length-display.length;
   return `<span class="kicker">🧤 Les coulisses</span><h1 class="h1">Les vestiaires</h1>
-    <p class="muted">Les boxeurs qui ne sont pas à l'antenne se promènent dans le vestiaire. <b>Glisse deux combattants du même niveau et de la même rareté l'un sur l'autre pour fusionner.</b></p>
+    <p class="muted">Les boxeurs se promènent dans le vestiaire. <b>Glisse deux combattants du même niveau et de la même rareté l'un sur l'autre pour fusionner.</b> Maintenant jusqu'au stade ${MAX_FIGHTER_LEVEL} !</p>
     <section class="card locker-panel"><h2>📡 Sur le plateau TV</h2><p class="subnote">Ces deux vedettes restent immobiles, mais tu peux aussi les attraper pour fusionner.</p>
       <div class="locker-onair-strip">${onAir.map((f,i)=>lockerCharacter(f,i,true)).join('')}${onAir.length<2?'<span class="locker-air-empty">Emplacement libre</span>':''}</div></section>
     <section class="card locker-panel"><div class="locker-heading"><h2>🏠 Dans les coulisses (${others.length})</h2><span class="locker-help">☝️ Glisser pour fusionner</span></div>
@@ -412,7 +482,7 @@ function collectionScreen() {
       </div>${rest>0?`<p class="subnote">${rest} autre(s) combattant(s) en réserve. Les 16 premiers sont affichés.</p>`:''}
       <p class="subnote" id="locker-instruction">Normal + normal → normal · Shiny + shiny → shiny. Les mélanges sont impossibles.</p></section>
     <section class="card"><h2>🎁 Équipements de boxe</h2><div class="eq-grid">${EQUIPMENT.map(item => `<div class="eq-item ${game.equipment[item.id] > 0 ? 'ready' : ''}"><span>${item.icon} ${item.label}</span><b>×${game.equipment[item.id]}</b></div>`).join('')}</div>
-    <button class="action" type="button" data-action="recruit" ${ready ? '' : 'disabled'}>✨ Recruter un Paumé</button><p class="subnote">Consomme un exemplaire de chacun des quatre équipements.</p></section>`;
+    <button class="action" type="button" data-action="recruit" ${ready ? '' : 'disabled'}>✨ Recruter un Bébé Bourrin</button><p class="subnote">Consomme un exemplaire de chacun des quatre équipements.</p></section>`;
 }
 
 // Fusion au glisser-déposer, compatible avec la souris ET le tactile.
@@ -423,7 +493,7 @@ function clearLockerSelection() { lockerSelection=null; document.querySelectorAl
 function fuseFighters(firstId, secondId) {
   if (!firstId || !secondId || firstId===secondId) return false;
   const a=fighterById(firstId), b=fighterById(secondId);
-  if (!a || !b || a.level!==b.level || Boolean(a.shiny)!==Boolean(b.shiny) || a.level>=4) return false;
+  if (!a || !b || a.level!==b.level || Boolean(a.shiny)!==Boolean(b.shiny) || a.level>=MAX_FIGHTER_LEVEL) return false;
   const newLevel=a.level+1;
   const companionWasUsed = game.gymCompanionId===a.id || game.gymCompanionId===b.id;
   const fused = {id:getNewId(),level:newLevel,shiny:Boolean(a.shiny)};
@@ -464,7 +534,7 @@ function updateLockerDrag(ev) {
   document.querySelectorAll('.locker-fighter.drop-ok,.locker-fighter.drop-no').forEach(e=>e.classList.remove('drop-ok','drop-no'));
   const hit=document.elementFromPoint(ev.clientX,ev.clientY)?.closest('.locker-fighter');
   if(hit && hit.dataset.fighterId!==d.id) {
-    hit.classList.add(Number(hit.dataset.fighterLevel)===d.level && hit.dataset.fighterShiny===d.shiny && d.level<4?'drop-ok':'drop-no');
+    hit.classList.add(Number(hit.dataset.fighterLevel)===d.level && hit.dataset.fighterShiny===d.shiny && d.level<MAX_FIGHTER_LEVEL?'drop-ok':'drop-no');
   }
 }
 function endLockerDrag(ev) {
@@ -516,49 +586,34 @@ function eggSlotHtml(egg) {
     ${state==='stock'?`<button class="egg-button" data-action="incubate" data-egg-id="${egg.id}">Incuber</button>`:''}
     ${state==='ready'?`<button class="egg-button" data-action="hatch" data-egg-id="${egg.id}">Ouvrir l'œuf</button>`:''}
     ${state==='incubating'||state==='glowing'?`<button class="egg-button egg-gems-button" data-action="gem-egg" data-egg-id="${egg.id}" ${game.gems<GEM_ACCEL_COST?'disabled':''}>💎 ${GEM_ACCEL_COST} gemmes · −30 min</button>
-    <button class="egg-test-button" data-action="test-egg" data-egg-id="${egg.id}">⏩ Accélérer (test)</button>`:''}
+    ${game.devMode?`<button class="egg-test-button" data-action="test-egg" data-egg-id="${egg.id}">⏩ Accélérer (test)</button>`:''}`:''}
   </div>`;
 }
 function laterScreen() {
-  const canClaim=game.lastDailyEgg!==localDayKey() && game.eggs.length<EGG_CAP;
-  const shinyEntries=[1,2,3,4].map(level=>`<div class="album-entry ${game.shinyAlbum[level]?'unlocked':''}">${game.shinyAlbum[level]?'✨':'🔒'}<small>Niv. ${level}</small></div>`).join('');
-  return `<span class="kicker">🥚 Les coulisses</span><h1 class="h1">Incubateur shiny</h1>
-    <p class="muted">Un œuf peut contenir un boxeur normal de niveau 1 ou 2, ou un shiny rare avec une aura dorée. Après 30 minutes, un œuf shiny commence à briller ; il éclot au bout de 2 heures.</p>
-    <section class="card"><h2>🎁 Œuf du jour</h2><p class="muted">Un œuf gratuit par jour · Stock maximum de ${EGG_CAP} œufs · Un seul incubateur actif.</p>
+  const shinyEntries=Array.from({length:MAX_FIGHTER_LEVEL},(_,i)=>i+1).map(level=>`<div class="album-entry ${game.shinyAlbum[level]?'unlocked':''}">${game.shinyAlbum[level]?'✨':'🔒'}<small>Niv. ${level}</small></div>`).join('');
+  return `<span class="kicker">🥚 Les coulisses</span><h1 class="h1">Incubateur</h1>
+    <p class="muted">Les œufs proviennent désormais des victoires : aucun œuf quotidien gratuit. Après 30 minutes, un œuf shiny commence à briller ; il éclot au bout de 2 heures.</p>
+    <section class="card"><h2>🏆 Gagner des œufs</h2>
+      <p class="muted">Tous les <b>${WINS_PER_EGG} duels remportés</b> : un œuf à récupérer. Victoires totales : <b>${game.combatWins}</b> · Encore <b>${WINS_PER_EGG-(game.combatWins%WINS_PER_EGG)}</b> victoire(s) avant le prochain.</p>
+      <p class="muted">Récompenses disponibles : <b>${game.pendingCombatEggs}</b> · Stock : <b>${game.eggs.length}/${EGG_CAP}</b> œufs.</p>
+      <button class="action secondary" data-action="claim-combat-egg" ${game.pendingCombatEggs>0 && game.eggs.length<EGG_CAP?'':'disabled'}>🥚 Récupérer un œuf de combat</button>
+    </section>
+    <section class="card"><h2>🔮 Mes œufs</h2>
       <div class="gem-caption">💎 Gemmes : <b>${format(game.gems)}</b> · Accélération de 30 min : <b>${GEM_ACCEL_COST} gemmes</b></div>
-      <div class="egg-header"><span>Œufs stockés : <b>${game.eggs.length} / ${EGG_CAP}</b></span><span>Chance shiny : <b>30 %</b></span></div>
-      <button class="action" data-action="daily-egg" ${canClaim?'':'disabled'}>${game.lastDailyEgg===localDayKey()?'✓ Œuf du jour déjà récupéré':game.eggs.length>=EGG_CAP?'📦 Stock plein (3/3)':'🎁 Récupérer mon œuf quotidien'}</button>
-    </section>
-    <section class="card"><h2>🏆 Œufs gagnés au combat</h2>
-      <p class="muted">Tous les ${WINS_PER_EGG} combats de démonstration gagnés : un œuf bonus. Victoires : <b>${game.combatWins}</b> · Prochain œuf dans <b>${WINS_PER_EGG - (game.combatWins % WINS_PER_EGG)}</b> victoire(s).</p>
-      <p class="muted">Récompenses à récupérer : <b>${game.pendingCombatEggs}</b>. Si ton stock est plein, elles restent ici.</p>
-      <button class="action secondary" data-action="claim-combat-egg" ${game.pendingCombatEggs>0 && game.eggs.length<EGG_CAP?'':'disabled'}>🥚 Récupérer un œuf de victoire</button>
-    </section>
-    <section class="card egg-testing"><h2>🧪 Tests du prototype</h2>
-      <p class="muted">Ces boutons ne comptent pas comme œuf quotidien. Tu peux tester autant de fois que tu veux, tant que le stock n'est pas plein.</p>
-      <button class="action secondary" data-action="add-test-egg" ${game.eggs.length >= EGG_CAP?'disabled':''}>🥚 Ajouter un œuf de test (30 % shiny)</button>
-      <button class="action pink" data-action="add-test-shiny" ${game.eggs.length >= EGG_CAP?'disabled':''}>✨ Ajouter un œuf shiny garanti (test)</button>
-      <p class="subnote">Il faut ensuite cliquer sur Incuber puis Accélérer (test), et enfin ouvrir l'œuf. Un shiny reste réservé aux fusions shiny.</p>
-    </section>
-    <section class="card"><h2>🔮 Mes œufs</h2><div class="egg-grid">${game.eggs.map(eggSlotHtml).join('')}${Array.from({length:Math.max(0,EGG_CAP-game.eggs.length)},()=>'<div class="egg-slot egg-empty"><span>＋</span><small>Emplacement libre</small></div>').join('')}</div>
-      ${!game.eggs.length?'<p class="subnote">Récupère ton œuf gratuit pour lancer une première incubation.</p>':''}
-      <p class="subnote">💎 Les gemmes permettent d'accélérer de 30 min. Le bouton gratuit « test » restera seulement pendant le prototype. Durées : 30 min / 2 h.</p>
+      <div class="egg-header"><span>Œufs stockés : <b>${game.eggs.length}/${EGG_CAP}</b></span><span>Chance shiny : <b>30 %</b></span></div>
+      <div class="egg-grid">${game.eggs.map(eggSlotHtml).join('')}${Array.from({length:Math.max(0,EGG_CAP-game.eggs.length)},()=>'<div class="egg-slot egg-empty"><span>＋</span><small>Emplacement libre</small></div>').join('')}</div>
+      ${!game.eggs.length?'<p class="subnote">Gagne sept combats pour récupérer ton premier œuf.</p>':''}
+      <p class="subnote">Les gemmes réduisent l'incubation de 30 minutes. Les shinies gardent les mêmes statistiques que les normaux.</p>
     </section>
     <section class="card"><h2>✨ Album shiny — Les Bourrins</h2><div class="shiny-album">${shinyEntries}</div>
-      <p class="muted">Chaque nouvelle évolution shiny découverte apporte <b>+1 % de revenus TV permanents</b>. Bonus actuel : <b>+${shinyBonusPercent()} %</b>. Les shinies ne sont pas plus forts en combat.</p>
+      <p class="muted">Chaque nouvelle évolution shiny découverte rapporte <b>+1 % de revenus TV permanents</b>. Bonus actuel : <b>+${shinyBonusPercent()} %</b>.</p>
     </section>
-    <div class="tip">Fusion : shiny + shiny uniquement, même niveau. Un shiny ne peut jamais fusionner avec un normal. Des championnats plus complets arriveront ensuite.</div>`;
-}
-function claimDailyEgg() {
-  if (game.lastDailyEgg===localDayKey()) return showToast('Tu as déjà reçu ton œuf aujourd’hui.');
-  if (game.eggs.length>=EGG_CAP) return showToast('Stock plein : ouvre un œuf avant de récupérer le suivant.');
-  game.lastDailyEgg=localDayKey();
-  game.eggs.push({id:getNewId(),startedAt:null});
-  playSound('confirm');save();render();showToast('🥚 Un œuf ajouté à ton stock !');
+    <div class="tip">Fusion : normal + normal ou shiny + shiny seulement, à niveau égal. Les outils d'œufs de test sont désormais réservés au mode développeur dans les Paramètres.</div>`;
 }
 function addTestEgg(forceShiny=false) {
-  if (game.eggs.length >= EGG_CAP) return showToast('Stock plein : ouvre un œuf avant de continuer les tests.');
-  game.eggs.push({id:getNewId(), startedAt:null, testForcedShiny:Boolean(forceShiny)});
+  if (!game.devMode) return showToast('Réservé au mode développeur.');
+  if (game.eggs.length >= EGG_CAP) return showToast('Stock plein : ouvre un œuf avant d’en ajouter.');
+  game.eggs.push({id:getNewId(),startedAt:null,testForcedShiny:Boolean(forceShiny)});
   playSound('confirm'); save(); render();
   showToast(forceShiny ? '✨ Œuf shiny de test ajouté !' : '🥚 Œuf de test ajouté !');
 }
@@ -598,6 +653,7 @@ function claimCombatEgg() {
   playSound('confirm');save();render();showToast('🥚 Œuf de victoire récupéré !');
 }
 function accelerateEggTest(id) {
+  if (!game.devMode) return;
   const egg=game.eggs.find(e=>e.id===id);
   if (!egg || !egg.startedAt || eggState(egg)==='ready') return;
   const elapsed=now()-egg.startedAt;
@@ -614,23 +670,23 @@ function combatScreen() {
     <p class="muted">Notre toute première arène ! Deux mouvements : les personnages respirent et se balancent, puis avancent pour frapper. Les adversaires réagissent aux coups.</p>
     <div class="fight-arena fight-preview">
       <div class="ring-glow"></div><div class="ring-floor"></div>
-      <div class="fight-actor player-actor ${fighter.shiny?'shiny-actor':''}"><img class="breathing" src="${imageFor(fighter.level)}" alt="${LEVELS[fighter.level].name}"></div>
-      <div class="fight-actor enemy-actor"><img class="breathing" src="${imageFor(1)}" alt="Le Paumé adverse"></div>
+      <div class="fight-actor player-actor ${fighter.shiny?'shiny-actor':''}${evolutionClass(fighter.level)}"><img class="breathing" src="${imageFor(fighter.level)}" alt="${LEVELS[fighter.level].name}">${evolutionDecoration(fighter.level)}</div>
+      <div class="fight-actor enemy-actor"><img class="breathing" src="${imageFor(1)}" alt="Bébé Bourrin adverse"></div>
       <span class="ring-versus">VS</span>
     </div>
-    <section class="card"><h2>🥊 ${LEVELS[fighter.level].name} contre Le Paumé</h2><p class="muted">Le boxeur le plus évolué de ta collection entre sur le ring. Les dégâts et les points de vie sont simplifiés pour tester les animations.</p><button type="button" data-action="start-duel" class="action">🎬 Lancer le combat !</button></section>
-    <div class="tip">Tous les 3 duels gagnés : 1 œuf à récupérer dans l’incubateur. Une victoire sur deux donne aussi 2 gemmes. Les équipes de 3 et les championnats arriveront après.</div>`;
+    <section class="card"><h2>🥊 ${LEVELS[fighter.level].name} contre Bébé Bourrin</h2><p class="muted">Le boxeur le plus évolué de ta collection entre sur le ring. Les dégâts et les points de vie sont simplifiés pour tester les animations.</p><button type="button" data-action="start-duel" class="action">🎬 Lancer le combat !</button></section>
+    <div class="tip">Tous les 7 duels gagnés : 1 œuf à récupérer dans l’incubateur. Une victoire sur deux donne aussi 2 gemmes. Les équipes de 3 et les championnats arriveront après.</div>`;
   const end = duel.result !== null;
   return `<span class="kicker">🥊 Boxe TV · Démo de combat</span><h1 class="h1">${end ? duel.result === 'win' ? 'Victoire ! 🎉' : 'Défaite ! 💥' : 'Sur le ring !'}</h1>
     <div class="fight-top">
       <div class="combat-unit"><strong>${character.name}</strong><div class="hpbar"><span id="combat-player-bar" style="width:${100*duel.playerHP/duel.maxPlayerHP}%"></span></div><small id="combat-player-hp">❤️ ${duel.playerHP} / ${duel.maxPlayerHP}</small></div>
       <strong class="versus-label">VS</strong>
-      <div class="combat-unit right"><strong>Le Paumé TV</strong><div class="hpbar"><span id="combat-enemy-bar" style="width:${100*duel.enemyHP/duel.maxEnemyHP}%"></span></div><small id="combat-enemy-hp">❤️ ${duel.enemyHP} / ${duel.maxEnemyHP}</small></div>
+      <div class="combat-unit right"><strong>Bébé Bourrin TV</strong><div class="hpbar"><span id="combat-enemy-bar" style="width:${100*duel.enemyHP/duel.maxEnemyHP}%"></span></div><small id="combat-enemy-hp">❤️ ${duel.enemyHP} / ${duel.maxEnemyHP}</small></div>
     </div>
     <div class="fight-arena ${end?'fight-done':''}" id="fight-arena">
       <span class="fight-live">● EN DIRECT</span><div class="ring-glow"></div><div class="ring-floor"></div>
-      <div class="fight-actor player-actor ${duel.shiny?'shiny-actor':''} ${end && duel.result==='lose'?'knocked-out':''}" id="player-actor"><img class="breathing" src="${imageFor(level)}" alt="${character.name}"></div>
-      <div class="fight-actor enemy-actor ${end && duel.result==='win'?'knocked-out':''}" id="enemy-actor"><img class="breathing" src="${imageFor(1)}" alt="Le Paumé TV adverse"></div>
+      <div class="fight-actor player-actor ${duel.shiny?'shiny-actor':''}${evolutionClass(level)} ${end && duel.result==='lose'?'knocked-out':''}" id="player-actor"><img class="breathing" src="${imageFor(level)}" alt="${character.name}">${evolutionDecoration(level)}</div>
+      <div class="fight-actor enemy-actor ${end && duel.result==='win'?'knocked-out':''}" id="enemy-actor"><img class="breathing" src="${imageFor(1)}" alt="Bébé Bourrin TV adverse"></div>
       ${end ? `<div class="fight-end-overlay ${duel.result}"><strong>${duel.result==='win'?'🏆 VICTOIRE !':'💥 DÉFAITE !'}</strong><span>${duel.result==='win'?'+75 pièces TV':'Reviens plus fort !'}</span></div>` : ''}
     </div>
     <p class="combat-log" id="combat-log" aria-live="polite">${end ? duel.result==='win'?'Tu remportes 75 pièces !':'Tu peux réessayer sans perdre ton boxeur.' : 'Choisis une attaque pour voir ton boxeur bouger.'}</p>
@@ -738,9 +794,86 @@ function punch(type) {
   },280);
 }
 
+// Paramètres : volumes conservés sur cet appareil. La musique reste
+// désactivée pour l'instant, mais son réglage est prêt pour un futur fichier.
+function settingsScreen() {
+  return `<span class="kicker">⚙️ Baston TV</span><h1 class="h1">Paramètres</h1>
+    <section class="card settings-card"><h2>🔊 Réglages audio</h2>
+      ${[['menus','🔔 Sons des menus'],['effects','🥊 Effets sonores'],['music','🎵 Musique de fond (à venir)']].map(([key,label])=>`
+      <label class="settings-slider" for="audio-${key}"><span>${label}</span><strong id="vol-${key}">${audioSettings[key]} %</strong></label>
+      <input class="volume-range" id="audio-${key}" type="range" min="0" max="100" step="5" value="${audioSettings[key]}" data-volume="${key}" aria-label="${label}">
+      `).join('')}
+      <p class="subnote">La musique n'est pas encore intégrée : son volume est sauvegardé pour plus tard. Le bouton 🔊 en haut coupe tous les sons.</p>
+    </section>
+    <section class="card settings-card"><h2>🎁 Codes cadeaux</h2>
+      <p class="muted">Entre un code puis valide. Chaque code cadeau n'est utilisable qu'une fois sur cet appareil.</p>
+      <div class="code-form"><input id="redeem-code" type="text" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Entrer un code…" aria-label="Code cadeau"><button class="action" type="button" data-action="redeem-code">Valider</button></div>
+    </section>
+    ${game.devMode?`<section class="card dev-panel"><h2>🧪 Mode développeur activé</h2>
+      <p class="muted">Outils de test locaux. Ne pas utiliser pour équilibrer les vraies récompenses.</p>
+      <div class="dev-add"><label>🪙 Pièces <input type="number" id="dev-coins" min="1" max="1000000" step="100" value="10000"></label><button type="button" class="action secondary" data-action="dev-coins">Ajouter</button></div>
+      <div class="dev-add"><label>💎 Gemmes <input type="number" id="dev-gems" min="1" max="100000" step="10" value="100"></label><button type="button" class="action secondary" data-action="dev-gems">Ajouter</button></div>
+      <div class="dev-eggs"><button class="action secondary" type="button" data-action="add-test-egg" ${game.eggs.length>=EGG_CAP?'disabled':''}>🥚 Œuf test</button><button class="action pink" type="button" data-action="add-test-shiny" ${game.eggs.length>=EGG_CAP?'disabled':''}>✨ Œuf shiny test</button></div>
+      <p class="subnote">En incubation, le bouton « Accélérer (test) » permet d'ouvrir un œuf sans attendre.</p>
+      </section>`:''}
+    <section class="card reset-panel"><h2>⚠️ Réinitialiser le compte</h2>
+      <p class="muted">Supprime les combattants, les shinies, les équipements, les œufs, les pièces et les gemmes de cet appareil. Tes préférences audio restent inchangées.</p>
+      <button type="button" class="action reset-button" data-action="reset-account">Réinitialiser ma progression</button>
+      <p class="subnote">Un double contrôle de confirmation évite toute suppression accidentelle.</p>
+    </section>
+    <p class="subnote">Version 0.12 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
+}
+function adjustVolume(name, value) {
+  if (!['menus','effects','music'].includes(name)) return;
+  audioSettings[name] = Math.max(0, Math.min(100, Number(value)||0));
+  try { localStorage.setItem(AUDIO_SETTINGS_KEY,JSON.stringify(audioSettings)); } catch (_) {}
+  if (sfxGain) sfxGain.gain.value = audioSettings.effects/100;
+  const label=document.getElementById(`vol-${name}`);
+  if(label) label.textContent=`${audioSettings[name]} %`;
+}
+function redeemCode() {
+  const field=document.getElementById('redeem-code');
+  if (!field) return;
+  const code=(field.value||'').trim().toLowerCase();
+  if (code==='test0.12') {
+    if (redeemedCodes.includes(code)) return showToast('Ce code a déjà été utilisé sur cet appareil.');
+    game.gems += 100;
+    redeemedCodes.push(code);
+    try {localStorage.setItem(REDEEMED_CODES_KEY,JSON.stringify(redeemedCodes));} catch (_) {}
+    save(); render(); playSound('recruit'); showToast('🎁 Code accepté : +100 gemmes !');
+  } else if (code==='dev0.12') {
+    game.devMode=true; save();render();playSound('confirm');showToast('🧪 Mode développeur activé !');
+  } else {
+    showToast('Code inconnu. Vérifie son orthographe.');
+    field.focus();
+  }
+}
+function devAdd(kind) {
+  if (!game.devMode) return;
+  const input=document.getElementById(kind==='coins'?'dev-coins':'dev-gems');
+  const amount=Number(input?.value);
+  const max=kind==='coins'?1000000:100000;
+  if (!Number.isSafeInteger(amount) || amount<1 || amount>max) return showToast(`Choisis un nombre entier entre 1 et ${format(max)}.`);
+  game[kind]+=amount;
+  save();render(); showToast(`🧪 +${format(amount)} ${kind==='coins'?'pièces':'gemmes'} !`);
+}
+function resetAccount() {
+  if (!window.confirm('ATTENTION : réinitialiser Baston TV supprimera toute ta progression locale. Continuer ?')) return;
+  const word=window.prompt('Dernière confirmation : écris REINITIALISER pour supprimer définitivement ta partie.');
+  if (word !== 'REINITIALISER') return showToast('Réinitialisation annulée.');
+  try {
+    localStorage.removeItem(SAVE_KEY);
+    localStorage.removeItem('bastontv-save-v01');
+  } catch (_) {}
+  game=freshSave(); training=null; duel=null; latestReward=null; viewerShift=0; viewerDelta=0;
+  clearLockerSelection();
+  currentView='home';
+  save(); render(); showToast('Nouvelle partie créée. Bonne chance !');
+}
+
 function render() {
   const screen = document.querySelector("#screen");
-  screen.innerHTML = ({home:homeScreen,gym:gymScreen,collection:collectionScreen,combat:combatScreen,later:laterScreen})[currentView]();
+  screen.innerHTML = ({home:homeScreen,gym:gymScreen,collection:collectionScreen,combat:combatScreen,later:laterScreen,settings:settingsScreen})[currentView]();
   document.querySelectorAll("[data-view]").forEach(button => {
     const active = button.dataset.view === currentView;
     button.classList.toggle("selected", active);
@@ -777,8 +910,9 @@ function upgrade() {
   save(); render(); showToast("Studio amélioré ! Tes revenus augmentent.");
 }
 function startTraining() {
-  if (training || game.coins < TRAINING_COST) return;
-  game.coins -= TRAINING_COST;
+  const cost = trainingCost();
+  if (training || game.coins < cost) return;
+  game.coins -= cost;
   game.sessions++;
   const chosen = gymCompanion();
   training = { start: performance.now(), end: performance.now() + TRAINING_MS, next: 0, hits: 0, misses: 0, wrongClicks: 0, combo: 0, best: 0, spotX: 50, spotY: 45,
@@ -907,7 +1041,12 @@ function chooseEquipment() {
 function finishTraining() {
   if (!training) return;
   const {hits, best} = training;
-  const total = Math.min(5, (hits >= 12 ? 4 : hits >= 8 ? 3 : hits >= 4 ? 2 : 1) + (best >= 5 ? 1 : 0));
+  // Jusqu'à 2 équipements normaux. Le 3e / 4e exige un excellent
+  // enchaînement parfait sans aucune faute (ni clic raté, ni cible expirée).
+  let total = hits < 3 ? 0 : hits < 8 ? 1 : 2;
+  if (training.misses === 0 && best >= 8) total++;
+  if (training.misses === 0 && best >= 13) total++;
+  total = Math.min(total, 4);
   const items = [];
   for (let i = 0; i < total; i++) {
     const id = chooseEquipment();
@@ -915,17 +1054,27 @@ function finishTraining() {
     items.push(id);
   }
   latestReward = {hits,best,items,misses: training.misses};
-  playSound(hits >= 8 ? 'combo' : 'recruit');
+  playSound(total >= 3 ? 'combo' : total===0 ? 'lose' : 'recruit');
   training = null;
   save(); render();
-  showToast(`${total} équipement(s) gagné(s) ! Va voir les vestiaires.`);
+  showToast(total ? `${total} équipement(s) gagné(s) ! Va voir les vestiaires.` : 'Aucun équipement : vise les cibles plus rapidement !');
 }
 function recruit() {
   if (!EQUIPMENT.every(item => game.equipment[item.id] > 0)) return;
   EQUIPMENT.forEach(item => game.equipment[item.id]--);
   game.fighters.push({id:getNewId(),level:1});
-  playSound('recruit'); save();render();showToast("Nouveau combattant recruté : Le Paumé !");
+  playSound('recruit'); save();render();showToast("Nouveau combattant recruté : Bébé Bourrin !");
 }
+document.addEventListener('input', event => {
+  const volume=event.target?.dataset?.volume;
+  if (volume) adjustVolume(volume,event.target.value);
+});
+// Valider un code aussi avec la touche Entrée sur ordinateur.
+document.addEventListener('keydown', event => {
+  if (event.key==='Enter' && event.target?.id==='redeem-code') {
+    event.preventDefault(); redeemCode();
+  }
+});
 document.addEventListener("click", event => {
   handleGymMiss(event);
   const nav = event.target.closest("[data-view]");
@@ -950,7 +1099,6 @@ document.addEventListener("click", event => {
     case "install-app": installBastonTV(); break;
     case "hit": hitSpot(); break;
     case "recruit": recruit(); break;
-    case "daily-egg": claimDailyEgg(); break;
     case "add-test-egg": addTestEgg(false); break;
     case "add-test-shiny": addTestEgg(true); break;
     case "incubate": incubateEgg(target.dataset.eggId); break;
@@ -958,6 +1106,10 @@ document.addEventListener("click", event => {
     case "test-egg": accelerateEggTest(target.dataset.eggId); break;
     case "gem-egg": accelerateEggGems(target.dataset.eggId); break;
     case "claim-combat-egg": claimCombatEgg(); break;
+    case "redeem-code": redeemCode(); break;
+    case "dev-coins": devAdd('coins'); break;
+    case "dev-gems": devAdd('gems'); break;
+    case "reset-account": resetAccount(); break;
   }
 });
 
