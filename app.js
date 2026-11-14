@@ -1,8 +1,8 @@
-/* Baston TV — Prototype 0.15. Aucun framework, ni serveur, ni compte requis. */
+/* Baston TV — Prototype 0.16. Aucun framework, ni serveur, ni compte requis. */
 "use strict";
 
 const SAVE_KEY = "bastontv-save-v03";
-const VERSION_LABEL = "0.15";
+const VERSION_LABEL = "0.16";
 const BASE_TRAINING_COST = 100;
 const TRAINING_INCREASE_EVERY = 3;
 const TRAINING_INCREASE_AMOUNT = 20;
@@ -25,9 +25,23 @@ const SHOP_NORMAL_EGG_GEMS = 35;
 const SHOP_SHINY_EGG_GEMS = 75;
 const PROTEIN_PRICE_GEMS = 500;
 const SHOP_FREE_EGG_COOLDOWN_MS = 24 * 60 * 60_000;
-const STUDIO_MAX_LEVEL = 5;
-const STUDIO_UPGRADE_COSTS = {1: 350, 2: 950, 3: 2400, 4: 6200};
-const STUDIO_BONUSES = {1: 0, 2: 15, 3: 35, 4: 60, 5: 100};
+const CHANNEL_MAX_LEVEL = 10;
+const CHANNEL_UPGRADE_COSTS = [0,450,850,1350,2100,3100,4500,6300,8500,11200];
+const CHANNEL_BONUSES = [0,0,8,15,22,35,45,60,72,86,100];
+const NINJA_UNLOCK_COST = 2000;
+const FAMILY_ORDER = ['boxe','ninja'];
+const FAMILY_DATA = {
+  boxe:{name:'Bourrins',singular:'Bourrin',channel:'Boxe TV',icon:'🥊',unlockCost:0,trainingMultiplier:1},
+  ninja:{name:'Ninjas',singular:'Ninja',channel:'Ninja TV',icon:'🥷',unlockCost:NINJA_UNLOCK_COST,trainingMultiplier:1.35}
+};
+const NINJA_LEVELS = [null,
+  {name:'Bébé Ninja',income:4},{name:'Le Novice',income:9},{name:'Le Filou',income:22},
+  {name:'Le Sabreur',income:53},{name:'Le Maître des Ombres',income:126},{name:'Le Shuriken Suprême',income:500}
+];
+const NINJA_EQUIPMENT = [
+  {id:'masque',label:'Masque',icon:'🥷'}, {id:'kunai',label:'Kunaï',icon:'🗡️'},
+  {id:'tenue',label:'Tenue ninja',icon:'🥋'}, {id:'sandales',label:'Sandales',icon:'👣'}
+];
 const LEVELS = [null,
   { name: "Bébé Bourrin", income: 3 },
   { name: "Le Paumé", income: 7 },
@@ -48,9 +62,19 @@ const now = () => Date.now();
 const format = n => Math.floor(n).toLocaleString("fr-FR");
 // Bébé Bourrin est une nouvelle illustration ; les quatre dessins originaux
 // sont décalés d'un stade. Le niveau 6 conserve son effet visuel provisoire.
-const imageFor = level => `./assets/boxeur-${Math.min(level, MAX_FIGHTER_LEVEL)}.png`;
+const imageFor = (level,family='boxe') => `./assets/${family==='ninja'?'ninja':'boxeur'}-${Math.max(1,Math.min(level,MAX_FIGHTER_LEVEL))}.png`;
+const familyOf = f => f?.family==='ninja'?'ninja':'boxe';
+const familyLevels = family => family==='ninja'?NINJA_LEVELS:LEVELS;
+const familyEquipment = family => family==='ninja'?NINJA_EQUIPMENT:EQUIPMENT;
+const fighterName = f => familyLevels(familyOf(f))[f.level]?.name || 'Combattant';
+const incomeFor = f => familyLevels(familyOf(f))[f.level]?.income||0;
+const isFamilyUnlocked = family => family==='boxe'||Boolean(game.unlockedFamilies?.ninja);
+const familyFighters = family => game.fighters.filter(f=>familyOf(f)===family);
+const sortFighters = (a,b) => b.level-a.level || Number(b.shiny)-Number(a.shiny);
+const familyTabs = (selected,action) => `<div class="family-tabs" role="group" aria-label="Choix de la famille">${FAMILY_ORDER.map(f=>`<button type="button" class="family-tab ${selected===f?'active':''}" data-action="${action}" data-family="${f}" ${isFamilyUnlocked(f)||action==='select-channel'?'':'disabled'}>${FAMILY_DATA[f].icon} ${FAMILY_DATA[f].name}${isFamilyUnlocked(f)?'':' 🔒'}</button>`).join('')}</div>`;
 const evolutionClass = level => level === 6 ? ' evolution-6' : '';
-function evolutionDecoration(level) {
+function evolutionDecoration(level,family='boxe') {
+  if (family==='ninja') return '';
   if (level === 6) return '<span class="evolution-emblem evolution-six" aria-hidden="true"><span>🥊</span><span>🥊</span></span>';
   return '';
 }
@@ -60,17 +84,23 @@ function freshSave() {
   return {
     coins: 600,
     studioLevel: 1,
+    channelLevels: {boxe:1,ninja:1},
+    unlockedFamilies: {boxe:true,ninja:false},
+    selectedChannel:'boxe', selectedLockerFamily:'boxe', selectedGymFamily:'boxe',
+    selectedCombatId:null,
+    equipmentByFamily:{ninja:Object.fromEntries(NINJA_EQUIPMENT.map(x=>[x.id,0]))},
+    sessionsByFamily:{boxe:0,ninja:0},
     lastTick: now(),
     equipment: Object.fromEntries(EQUIPMENT.map(x => [x.id, 0])),
-    fighters: [{ id: getNewId(), level: 1 }],
+    fighters: [{ id: getNewId(), level: 1, family:"boxe" }],
     sessions: 0,
     gems: GEM_START,
     combatWins: 0,
     pendingCombatEggs: 0,
     gymCompanionId: null,
     eggs: [],
-    shinyAlbum: {},
-    schemaVersion: 15,
+    shinyAlbum: {boxe:{},ninja:{}},
+    schemaVersion: 16,
     devMode: false,
     nextFreeShopEggAt: 0,
     proteins: 0
@@ -108,7 +138,27 @@ if ((game.schemaVersion || 0) < 13) {
 if ((game.schemaVersion || 0) < 14) game.schemaVersion = 14;
 // v0.15 n'altère pas les personnages, les ressources ou les séries de victoires.
 if ((game.schemaVersion || 0) < 15) game.schemaVersion = 15;
-game.fighters.forEach(f => { f.shiny = Boolean(f.shiny); });
+// v0.16 : ancienne chaîne studio -> niveau de Boxe TV équivalent, sans perdre le bonus.
+if ((game.schemaVersion||0)<16) {
+  const oldToChannel={1:1,2:3,3:5,4:7,5:10};
+  game.channelLevels={boxe:oldToChannel[game.studioLevel]||1,ninja:1};
+  game.schemaVersion=16;
+}
+if (!game.channelLevels || typeof game.channelLevels!=='object') game.channelLevels={boxe:1,ninja:1};
+for (const family of FAMILY_ORDER) game.channelLevels[family]=Math.max(1,Math.min(CHANNEL_MAX_LEVEL,Math.floor(game.channelLevels[family]||1)));
+if (!game.unlockedFamilies || typeof game.unlockedFamilies!=='object') game.unlockedFamilies={boxe:true,ninja:false};
+game.unlockedFamilies.boxe=true;
+if (game.fighters.some(f=>f.family==='ninja')) game.unlockedFamilies.ninja=true;
+if (!game.equipmentByFamily || typeof game.equipmentByFamily!=='object') game.equipmentByFamily={};
+if (!game.equipmentByFamily.ninja) game.equipmentByFamily.ninja={};
+for (const eq of NINJA_EQUIPMENT) if (!Number.isFinite(game.equipmentByFamily.ninja[eq.id])) game.equipmentByFamily.ninja[eq.id]=0;
+if (!game.sessionsByFamily || typeof game.sessionsByFamily!=='object') game.sessionsByFamily={boxe:game.sessions||0,ninja:0};
+for (const family of FAMILY_ORDER) game.sessionsByFamily[family]=Math.max(0,Math.floor(game.sessionsByFamily[family]||0));
+for (const key of ['selectedChannel','selectedLockerFamily','selectedGymFamily']) {
+  if (!FAMILY_ORDER.includes(game[key])||!isFamilyUnlocked(game[key])) game[key]='boxe';
+}
+if (game.selectedCombatId && !game.fighters.some(f=>f.id===game.selectedCombatId)) game.selectedCombatId=null;
+game.fighters.forEach(f => { f.shiny=Boolean(f.shiny); if(f.family!=='ninja')f.family='boxe'; });
 if (typeof game.devMode !== 'boolean') game.devMode = false;
 if (!Number.isSafeInteger(game.proteins) || game.proteins < 0) game.proteins = 0;
 if (!Number.isFinite(game.nextFreeShopEggAt) || game.nextFreeShopEggAt < 0) game.nextFreeShopEggAt = 0;
@@ -120,7 +170,13 @@ if (!Number.isFinite(game.combatWins) || game.combatWins < 0) game.combatWins = 
 if (!Number.isFinite(game.pendingCombatEggs) || game.pendingCombatEggs < 0) game.pendingCombatEggs = 0;
 if (typeof game.gymCompanionId !== 'string') game.gymCompanionId = null;
 if (!game.shinyAlbum || typeof game.shinyAlbum !== 'object') game.shinyAlbum = {};
-for (const f of game.fighters) if (f.shiny) game.shinyAlbum[f.level] = true;
+if (!game.shinyAlbum.boxe || typeof game.shinyAlbum.boxe!=='object') {
+  const oldAlbum=game.shinyAlbum;
+  game.shinyAlbum={boxe:{},ninja:{}};
+  for(const [level,found] of Object.entries(oldAlbum)) if(found && /^\d+$/.test(level))game.shinyAlbum.boxe[level]=true;
+}
+if (!game.shinyAlbum.ninja || typeof game.shinyAlbum.ninja!=='object') game.shinyAlbum.ninja={};
+for(const f of game.fighters) if(f.shiny) game.shinyAlbum[familyOf(f)][f.level]=true;
 let currentView = "home";
 let training = null;
 let latestReward = null;
@@ -304,7 +360,7 @@ function impactEffect(container, label="POW!", side="right", heavy=false) {
 
 
 function shinyBonusPercent() {
-  return Object.values(game.shinyAlbum).filter(Boolean).length;
+  return FAMILY_ORDER.reduce((sum,family)=>sum+Object.values(game.shinyAlbum?.[family]||{}).filter(Boolean).length,0);
 }
 function localDayKey() {
   const d = new Date();
@@ -326,8 +382,15 @@ function readableDuration(ms) {
   const h=Math.floor(seconds/3600), m=Math.floor((seconds%3600)/60), sec=seconds%60;
   return h ? `${h} h ${String(m).padStart(2,'0')} min` : `${m} min ${String(sec).padStart(2,'0')} s`;
 }
-function currentStudioBonusPercent() { return STUDIO_BONUSES[game.studioLevel] ?? 0; }
-function nextStudioUpgradeCost() { return STUDIO_UPGRADE_COSTS[game.studioLevel] ?? null; }
+function channelLevel(family) {return game.channelLevels?.[family]||1;}
+function channelBonusPercent(family) {return CHANNEL_BONUSES[channelLevel(family)]||0;}
+function nextChannelUpgradeCost(family) {const level=channelLevel(family);return level>=CHANNEL_MAX_LEVEL?null:Math.round((CHANNEL_UPGRADE_COSTS[level]||11200)*(family==='ninja'?1.3:1));}
+function channelIncome(family) {
+  if(!isFamilyUnlocked(family))return 0;
+  const twoBest=familyFighters(family).sort(sortFighters).slice(0,2);
+  return twoBest.reduce((sum,f)=>sum+incomeFor(f),0)*(1+channelBonusPercent(family)/100)*(1+shinyBonusPercent()/100);
+}
+function inventoryFor(family) {return family==='ninja'?game.equipmentByFamily.ninja:game.equipment;}
 function freeShopEggRemaining() { return Math.max(0, (game.nextFreeShopEggAt || 0) - now()); }
 function canClaimFreeShopEgg() { return freeShopEggRemaining() <= 0; }
 function opponentForLevel(playerLevel) {
@@ -340,16 +403,14 @@ function opponentForLevel(playerLevel) {
 }
 // La progression reste possible même avec peu de pièces :
 // +20 pièces toutes les 3 séances réalisées, +30 par stade au-dessus de 2.
-function trainingCost() {
-  const best = Math.max(1, ...game.fighters.map(f => f.level));
-  const rounds = Math.floor(game.sessions / TRAINING_INCREASE_EVERY);
-  return Math.min(3500, BASE_TRAINING_COST + TRAINING_INCREASE_AMOUNT * rounds + 30 * Math.max(0, best - 2));
+function trainingCost(family=game.selectedGymFamily) {
+  const members=familyFighters(family),best=Math.max(1,...members.map(f=>f.level));
+  const sessions=game.sessionsByFamily[family]||0;
+  const base=BASE_TRAINING_COST+TRAINING_INCREASE_AMOUNT*Math.floor(sessions/TRAINING_INCREASE_EVERY)+30*Math.max(0,best-2);
+  return Math.min(5000,Math.ceil(base*FAMILY_DATA[family].trainingMultiplier/5)*5);
 }
-function incomePerMinute() {
-  const twoBest = [...game.fighters].sort((a, b) => b.level - a.level).slice(0, 2);
-  const basic = twoBest.reduce((sum, fighter) => sum + LEVELS[fighter.level].income, 0);
-  return basic * (1 + currentStudioBonusPercent() / 100) * (1 + shinyBonusPercent() / 100);
-}
+function incomePerMinute() {return FAMILY_ORDER.reduce((sum,f)=>sum+channelIncome(f),0);}
+
 function advanceCoins() {
   const time = now();
   const elapsed = Math.min(OFFLINE_CAP_MS, Math.max(0, time - (game.lastTick || time)));
@@ -369,49 +430,44 @@ function showToast(message) {
   clearTimeout(toastTimeout);
   toastTimeout = setTimeout(() => el.classList.remove("visible"), 3300);
 }
-function strongestFighters() {
-  return [...game.fighters].sort((a, b) => b.level - a.level || Number(b.shiny)-Number(a.shiny)).slice(0, 2);
+function strongestFighters(family=game.selectedChannel) {
+  return familyFighters(family).sort(sortFighters).slice(0,2);
 }
 // Un choix indépendant des combattants diffusés : seul le visuel de l'entraînement change.
-function gymCompanion() {
-  const selected = game.fighters.find(f => f.id === game.gymCompanionId);
-  if (selected) return selected;
-  const fallback = strongestFighters()[0] || game.fighters[0] || null;
-  game.gymCompanionId = fallback?.id || null;
-  return fallback;
+function gymCompanion(family=game.selectedGymFamily) {
+  const selected=game.fighters.find(f=>f.id===game.gymCompanionId&&familyOf(f)===family);
+  if(selected)return selected;
+  return familyFighters(family).sort(sortFighters)[0]||null;
 }
 function chooseGymCompanion(id) {
-  if (training) return;
-  const fighter = game.fighters.find(f => f.id === id);
-  if (!fighter) return;
-  game.gymCompanionId = fighter.id;
-  save(); render();
-  showToast(`${fighter.shiny?'✨ ':''}${LEVELS[fighter.level].name} t'accompagnera à l'entraînement !`);
+  if(training)return;
+  const fighter=game.fighters.find(f=>f.id===id&&familyOf(f)===game.selectedGymFamily);
+  if(!fighter)return;
+  game.gymCompanionId=fighter.id;save();render();
+  showToast(`${fighter.shiny?'✨ ':''}${fighterName(fighter)} t'accompagnera à l'entraînement !`);
 }
 function gymCompanionHtml(fighter) {
-  if (!fighter) return '';
-  return `<div class="gym-companion-actor ${fighter.shiny?'shiny-actor':''}${evolutionClass(fighter.level)}" aria-label="${LEVELS[fighter.level].name}${fighter.shiny?' shiny':''} t'accompagne">
-    <img class="gym-boxer breathing" id="gym-boxer" src="${imageFor(fighter.level)}" alt="${LEVELS[fighter.level].name}${fighter.shiny?' shiny':''}">${evolutionDecoration(fighter.level)}
-  </div>`;
+  if(!fighter)return '';
+  const family=familyOf(fighter);
+  return `<div class="gym-companion-actor ${fighter.shiny?'shiny-actor':''}${family==='boxe'?evolutionClass(fighter.level):''}" aria-label="${fighterName(fighter)}">
+    <img class="gym-boxer breathing" id="gym-boxer" src="${imageFor(fighter.level,family)}" alt="${fighterName(fighter)}">${evolutionDecoration(fighter.level,family)}</div>`;
 }
 function gymRosterHtml(companion) {
-  return `<section class="card gym-choice-panel"><h2>🥊 Choisir mon accompagnateur</h2>
-      <p class="muted">Choisis librement un boxeur, même shiny ou niveau 1. Cela ne modifie ni ses statistiques ni les revenus TV.</p>
-      <div class="gym-roster" role="group" aria-label="Choix du boxeur pour l'entraînement">${game.fighters.map(f=>`
-        <button class="gym-roster-fighter ${companion?.id===f.id?'is-selected':''} ${f.shiny?'shiny-fighter':''}${evolutionClass(f.level)}" type="button" data-action="choose-companion" data-fighter-id="${f.id}"
-          aria-pressed="${String(companion?.id===f.id)}" aria-label="Choisir ${LEVELS[f.level].name}, évolution ${f.level}${f.shiny?', shiny':''}">
-          <img src="${imageFor(f.level)}" alt="">${evolutionDecoration(f.level)}<strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong><small>Niv. ${f.level}</small>
-          <span class="gym-roster-check">${companion?.id===f.id?'✓ Sélectionné':'Choisir'}</span>
-        </button>`).join('')}</div>
-    </section>`;
+  const members=familyFighters(game.selectedGymFamily).sort(sortFighters);
+  return `<section class="card gym-choice-panel"><h2>${FAMILY_DATA[game.selectedGymFamily].icon} Choisir mon accompagnateur</h2>
+      <p class="muted">Le choix de l'accompagnateur ne change pas les équipements obtenus : c'est la famille sélectionnée au-dessus qui compte.</p>
+      <div class="gym-roster" role="group" aria-label="Choix du combattant">${members.map(f=>`
+        <button class="gym-roster-fighter ${companion?.id===f.id?'is-selected':''} ${f.shiny?'shiny-fighter':''}" type="button" data-action="choose-companion" data-fighter-id="${f.id}"
+          aria-pressed="${String(companion?.id===f.id)}" aria-label="Choisir ${fighterName(f)}, évolution ${f.level}">
+          <img src="${imageFor(f.level,familyOf(f))}" alt=""><strong>${f.shiny?'✨ ':''}${fighterName(f)}</strong><small>Niv. ${f.level}</small>
+          <span class="gym-roster-check">${companion?.id===f.id?'✓ Sélectionné':'Choisir'}</span></button>`).join('')}</div></section>`;
 }
-
 
 // Le compteur simule une audience en direct. Il varie légèrement sans changer les revenus.
 let viewerShift = 0;
 let viewerDelta = 0;
 function baseAudience() {
-  return 160 + game.studioLevel * 38 + strongestFighters().reduce((sum, fighter) => sum + fighter.level * 115, 0);
+  return 160 + channelLevel(game.selectedChannel)*26 + strongestFighters(game.selectedChannel).reduce((sum,f)=>sum+f.level*115,0);
 }
 function currentAudience() { return Math.max(0, baseAudience() + viewerShift); }
 function tickAudience() {
@@ -454,103 +510,106 @@ function fighterTile(fighter) {
   return `<div class="fighter-card"><img src="${imageFor(fighter.level)}" alt="${info.name}"><b>${info.name}</b><small>Évolution ${fighter.level} · +${info.income} pièces/min</small></div>`;
 }
 function homeScreen() {
-  const onAir = strongestFighters();
-  const nextCost = nextStudioUpgradeCost();
-  return `
-    <span class="kicker">📡 Les chaînes TV</span><h1 class="h1">Bienvenue au studio !</h1>
-    <p class="muted">Ta chaîne rapporte des pièces automatiquement. Les deux meilleurs boxeurs passent à l'antenne.</p>
-    <div class="tv-stage" aria-label="Boxe TV en direct">
-      <span class="live-label">● EN DIRECT</span>
-      <div class="viewers-live" aria-label="Audience simulée en direct">👥 <b id="viewers-live">${format(currentAudience())}</b> <small id="viewers-change" class="viewers-change up">• 0</small></div><div class="stage-logo">BASTON <span>TV</span></div>
-      <div class="on-air">${onAir.map((f,i) => `<div class="fighter-onair tv-fighter-${i+1} ${f.shiny?'shiny-fighter':''}${evolutionClass(f.level)}"><div class="tv-actor"><img src="${imageFor(f.level)}" alt="${LEVELS[f.level].name}${f.shiny?' shiny':''}">${evolutionDecoration(f.level)}</div><strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong></div>`).join("")}
-      ${onAir.length < 2 ? '<div class="empty-slot">Place libre</div>' : ''}</div>
-    </div>
-    <div class="stat-grid"><div class="stat"><small>📈 Revenus TV</small><b id="rate-live">+${format(incomePerMinute())}/min</b><small>En jeu et hors ligne (8 h max.)</small></div>
-    <div class="stat"><small>🎬 Niveau du studio</small><b>${game.studioLevel}</b><small>Bonus : +${currentStudioBonusPercent()} %</small></div></div>
-    <div class="tv-shiny-caption">✨ Découvertes shiny : ${shinyBonusPercent()} / ${MAX_FIGHTER_LEVEL} · Bonus permanent : +${shinyBonusPercent()} % aux revenus TV</div>
+  const family=game.selectedChannel;
+  const unlocked=isFamilyUnlocked(family);
+  const info=FAMILY_DATA[family];
+  const onAir=unlocked?strongestFighters(family):[];
+  const nextCost=unlocked?nextChannelUpgradeCost(family):null;
+  return `<span class="kicker">📡 Les chaînes TV</span><h1 class="h1">Bienvenue au studio !</h1>
+    <p class="muted">Chaque famille possède sa chaîne, ses deux vedettes et ses propres améliorations. Les revenus des chaînes se cumulent, même quand tu regardes une autre chaîne.</p>
+    ${familyTabs(family,'select-channel')}
+    ${!unlocked?`<section class="card unlock-panel"><h2>🥷 Débloquer Ninja TV</h2><p class="muted">Ouvre le dojo Ninja, reçois un Bébé Ninja et débloque ses équipements, son vestiaire et sa chaîne.</p>
+      <div class="price"><span>Prix de déblocage</span><strong>🪙 ${format(NINJA_UNLOCK_COST)}</strong></div>
+      <button class="action pink" data-action="unlock-ninja" ${game.coins<NINJA_UNLOCK_COST?'disabled':''}>🥷 Débloquer les Ninjas</button>
+      <p class="subnote">Il te manque ${format(Math.max(0,NINJA_UNLOCK_COST-game.coins))} pièce(s) si tu ne peux pas encore acheter.</p></section>`:
+      `<div class="tv-stage ${family==='ninja'?'tv-ninja':''}" aria-label="${info.channel} en direct">
+        <span class="live-label">● EN DIRECT</span>
+        <div class="viewers-live" aria-label="Audience simulée en direct">👥 <b id="viewers-live">${format(currentAudience())}</b> <small id="viewers-change" class="viewers-change up">• 0</small></div>
+        <div class="stage-logo">${info.icon} ${info.channel.toUpperCase()}</div>
+        <div class="on-air">${onAir.map((f,i)=>`<div class="fighter-onair tv-fighter-${i+1} ${f.shiny?'shiny-fighter':''}${family==='boxe'?evolutionClass(f.level):''}">
+          <div class="tv-actor"><img src="${imageFor(f.level,family)}" alt="${fighterName(f)}">${evolutionDecoration(f.level,family)}</div><strong>${f.shiny?'✨ ':''}${fighterName(f)}</strong></div>`).join('')}
+          ${onAir.length<2?'<div class="empty-slot">Place libre</div>':''}</div></div>`}
+    <div class="stat-grid"><div class="stat"><small>📈 Revenus totaux</small><b id="rate-live">+${format(incomePerMinute())}/min</b><small>${info.channel} : +${format(channelIncome(family))}/min</small></div>
+      <div class="stat"><small>🎬 ${info.channel}</small><b>Niv. ${unlocked?channelLevel(family):'🔒'}</b><small>Bonus : +${unlocked?channelBonusPercent(family):0} %</small></div></div>
+    <div class="tv-shiny-caption">✨ Shinies découverts : ${shinyBonusPercent()} · Bonus global : +${shinyBonusPercent()} % aux revenus TV</div>
     <button type="button" class="action secondary" data-action="go-gym">🥊 Aller s'entraîner</button>
-    <button type="button" class="action pink" data-action="go-combat">⚔️ Essayer le combat animé !</button>
-    <section class="card"><h2>🔧 Améliorer le studio</h2><p class="muted">Les premiers niveaux donnent un petit bonus, puis les derniers rattrapent pour atteindre le même résultat final. En contrepartie, ils coûtent plus cher.</p>
-    <div class="price"><span>Coût du prochain niveau</span><span>${nextCost ? `🪙 ${format(nextCost)}` : 'MAX'}</span></div>
-    <button class="action" type="button" data-action="upgrade" ${game.studioLevel >= STUDIO_MAX_LEVEL || Math.floor(game.coins) < (nextCost || Infinity) ? "disabled" : ""}>${game.studioLevel >= STUDIO_MAX_LEVEL ? "Niveau maximal du prototype" : `Améliorer (+${(STUDIO_BONUSES[game.studioLevel + 1] || currentStudioBonusPercent()) - currentStudioBonusPercent()} %)`}</button>
-    <p class="subnote">Paliers : niv. 2 = +15 % · niv. 3 = +35 % · niv. 4 = +60 % · niv. 5 = +100 %.</p></section>
-    <div class="tip"><strong>💡 Astuce :</strong> deux Bébés Bourrins rapportent 6 pièces/min. En les fusionnant, un Paumé rapporte 7 pièces/min : pense à occuper les deux places TV pour maximiser tes revenus !</div>
-    <section class="card evolution-roadmap"><h2>🥊 Évolutions des Bourrins</h2>
-      <p class="muted">Six stades à débloquer. Pour fabriquer un niveau 6 uniquement avec des recrues niveau 1, il en faut <b>32</b> !</p>
-      <div class="evolution-roadmap-grid">${LEVELS.slice(1).map((info,index) => {
-        const level=index+1, unlocked=game.fighters.some(f=>f.level>=level);
-        return `<div class="roadmap-step ${unlocked?'roadmap-unlocked':''}"><small>Stade ${level}</small><strong>${unlocked?'✓ ':'🔒 '}${info.name}</strong><span>+${info.income} 🪙/min</span></div>`;
-      }).join('')}</div>
-      <p class="subnote">Le bébé est un nouveau dessin ; le niveau 6 utilise encore une silhouette provisoire et des gants supplémentaires.</p>
-    </section>
+    <button type="button" class="action pink" data-action="go-combat">⚔️ Aller combattre</button>
+    ${unlocked?`<section class="card"><h2>🔧 Améliorer ${info.channel}</h2>
+      <p class="muted">${CHANNEL_MAX_LEVEL} niveaux par chaîne. Les améliorations ne renforcent que ${info.channel}, avec un bonus maximum de +100 %.</p>
+      <div class="price"><span>Prochain niveau</span><span>${nextCost?`🪙 ${format(nextCost)}`:'MAX'}</span></div>
+      <button class="action" type="button" data-action="upgrade" ${!nextCost || game.coins<nextCost?'disabled':''}>${nextCost?`Améliorer (+${CHANNEL_BONUSES[channelLevel(family)+1]-channelBonusPercent(family)} %)`:'Chaîne au maximum'}</button></section>`:''}
+    <section class="card evolution-roadmap"><h2>${info.icon} Évolutions ${info.name}</h2>
+      <p class="muted">Six stades. Il faut 32 recrues niveau 1 pour créer un niveau 6 sans protéine.</p>
+      <div class="evolution-roadmap-grid">${familyLevels(family).slice(1).map((stage,index)=>{
+        const level=index+1,found=familyFighters(family).some(f=>f.level>=level);
+        return `<div class="roadmap-step ${found?'roadmap-unlocked':''}"><small>Stade ${level}</small><strong>${found?'✓':'🔒'} ${stage.name}</strong><span>+${stage.income} 🪙/min</span></div>`;
+      }).join('')}</div></section>
     <section class="install-panel" id="install-panel"><h2>📱 Baston TV sur ton téléphone</h2>
       <p>Installe le jeu depuis ton navigateur pour le retrouver sur ton écran d’accueil.</p>
       <button class="action secondary" type="button" data-action="install-app" id="install-app-button">📲 Installer Baston TV</button></section>`;
 }
 function gymScreen() {
-  const companion = gymCompanion();
-  if (training) return `<span class="kicker">🥊 Entraînement en cours</span><h1 class="h1">Frappe les points faibles !</h1>
+  const family=training?.family||game.selectedGymFamily;
+  const companion=training?.companion?game.fighters.find(f=>f.id===training.companion.id)||training.companion:gymCompanion(family);
+  if(training)return `<span class="kicker">🥊 Entraînement ${FAMILY_DATA[family].name}</span><h1 class="h1">Frappe les points faibles !</h1>
     <div class="train-stat"><span>⏱ <span id="training-timer">20,0</span> s</span><span>⭐ <span id="training-hits">0</span> touches</span><span>🔥 <span id="training-combo">0</span></span><span>❌ <span id="training-misses">0</span></span></div>
     <div class="progress"><span id="training-progress" style="width:100%"></span></div>
-    <div class="bag-arena" id="bag-arena" style="margin-top:12px"><span class="gym-status" id="gym-status">Vise la cible !</span>${gymCompanionHtml(training.companion || companion)}<div class="bag-swing" id="bag-swing"><div class="bag-cable" aria-hidden="true"></div><div class="bag" id="bag"><button class="spot" id="spot" data-action="hit" aria-label="Frapper le point faible" style="left:50%;top:45%"></button></div></div></div>
-    <p class="muted">Le point faible change de place. Si tu rates ou si tu cliques à côté, tu perds du temps !</p>
-    <p class="subnote">⏳ Cible expirée : −0,7 s · Mauvais clic : −0,5 s · 5 touches de suite = bonus</p>`;
-  const result = latestReward ? `<section class="card"><h2>🎁 Dernière séance</h2><p class="muted">${latestReward.hits} point(s) touché(s) · meilleur combo : ${latestReward.best} · erreurs : ${latestReward.misses}</p><div class="reward-list">${latestReward.items.length?latestReward.items.map(id => `<span class="reward-bubble">${EQUIPMENT.find(x => x.id === id).icon} ${EQUIPMENT.find(x => x.id === id).label}</span>`).join(""):'<span class="reward-empty">Aucun équipement cette fois. Tu feras mieux au prochain essai !</span>'}</div></section>` : "";
+    <div class="bag-arena" id="bag-arena" style="margin-top:12px"><span class="gym-status" id="gym-status">Vise la cible !</span>${gymCompanionHtml(companion)}<div class="bag-swing" id="bag-swing"><div class="bag-cable" aria-hidden="true"></div><div class="bag" id="bag"><button class="spot" id="spot" data-action="hit" aria-label="Frapper le point faible" style="left:50%;top:45%"></button></div></div></div>
+    <p class="muted">Tu récoltes uniquement des équipements ${FAMILY_DATA[family].name} pendant cette séance.</p>`;
+  const result=latestReward?`<section class="card"><h2>🎁 Dernière séance · ${FAMILY_DATA[latestReward.family||'boxe'].name}</h2><p class="muted">${latestReward.hits} point(s) · combo : ${latestReward.best} · erreurs : ${latestReward.misses}</p>
+      <div class="reward-list">${latestReward.items.length?latestReward.items.map(id=>{const item=familyEquipment(latestReward.family||'boxe').find(x=>x.id===id);return `<span class="reward-bubble">${item?.icon||''} ${item?.label||id}</span>`;}).join(''):'<span>Aucun équipement cette fois.</span>'}</div></section>`:'';
   return `<span class="kicker">🎯 Les coulisses</span><h1 class="h1">Salle d'entraînement</h1>
-    <p class="muted">Les points faibles sont plus espacés. Il faut être rapide et précis : les erreurs te font perdre du temps.</p>
+    <p class="muted">Choisis la famille à entraîner : les équipements récoltés serviront uniquement à recruter des combattants de cette famille.</p>
+    ${familyTabs(family,'select-gym-family')}
     <div class="bag-arena">${gymCompanionHtml(companion)}<div class="bag-swing"><div class="bag-cable" aria-hidden="true"></div><div class="bag"><div class="spot" style="left:49%;top:34%;pointer-events:none"></div></div></div></div>
-    <button class="action gym-start-cta" type="button" data-action="start-training" ${Math.floor(game.coins) < trainingCost() ? "disabled" : ""}>🥊 Commencer la séance · ${format(trainingCost())} 🪙</button>
-    ${Math.floor(game.coins) < trainingCost() ? '<p class="subnote">Pas assez de pièces. Laisse ta chaîne en produire un peu, puis reviens !</p>' : ''}
+    <button class="action gym-start-cta" type="button" data-action="start-training" ${game.coins<trainingCost(family)?'disabled':''}>🥊 Commencer la séance ${FAMILY_DATA[family].icon} · ${format(trainingCost(family))} 🪙</button>
     ${gymRosterHtml(companion)}
-    <div class="stat-grid"><div class="stat"><small>⏱ Durée</small><b>20 s</b></div><div class="stat"><small>🪙 Prix actuel</small><b>${format(trainingCost())}</b></div></div>
-    <p class="subnote">Le prix augmente de 20 pièces toutes les 3 séances, puis de 30 pièces supplémentaires à chaque nouvelle évolution au-delà du niveau 2.</p>
+    <div class="stat-grid"><div class="stat"><small>⏱ Durée</small><b>20 s</b></div><div class="stat"><small>🪙 Prix ${FAMILY_DATA[family].name}</small><b>${format(trainingCost(family))}</b></div></div>
+    <p class="subnote">Les sessions Ninja coûtent 35 % de plus que celles de Boxe, à progression équivalente. Chaque famille a sa propre progression du prix.</p>
     ${result}
-    <div class="tip"><strong>Récompenses :</strong> 0 équipement pour un score très faible ; sinon 1 à 2. Tu peux gagner jusqu'à 4 équipements si tu réalises un excellent combo <b>sans aucune faute</b>. Chaque faute retire du temps et brise le combo.</div>`;
+    <div class="tip"><b>Récompenses :</b> 0 équipement pour un mauvais score ; 1 à 2 en général, jusqu'à 4 avec un excellent combo sans faute.</div>`;
 }
-function lockerCharacter(fighter, index, onAir=false) {
-  const level = fighter.level;
-  const x = 17 + (index % 3) * 33;
-  const floor = 22 + Math.floor(index / 3) * 155;
-  const delay = ((index * 73) % 17) / 10;
-  const duration = 3.2 + (index % 4) * .45;
-  return `<div class="locker-fighter ${onAir ? 'locker-on-air' : 'locker-wander'}" data-fighter-id="${fighter.id}" data-fighter-level="${level}" data-fighter-shiny="${fighter.shiny?'true':'false'}" tabindex="0" role="button" aria-label="${LEVELS[level].name} niveau ${level}${fighter.shiny?' shiny':''}. Glisse sur un autre combattant du même niveau et de la même rareté pour fusionner" style="--lx:${x}%;--floor-bottom:${floor}px;--delay:-${delay}s;--distance:${6+(index%4)*4}px;--duration:${duration}s">
-    <div class="locker-character ${fighter.shiny?'is-shiny':''}${evolutionClass(level)}"><img src="${imageFor(level)}" draggable="false" alt="">${evolutionDecoration(level)}<span class="locker-level">${fighter.shiny?'✨ ':''}Niv. ${level}</span></div>
-    <span class="locker-name">${fighter.shiny?'✨ ':''}${LEVELS[level].name}</span></div>`;
+function lockerCharacter(fighter,index,onAir=false) {
+  const level=fighter.level,family=familyOf(fighter);
+  const x=17+(index%3)*33, floor=22+Math.floor(index/3)*155;
+  const delay=((index*73)%17)/10,duration=3.2+(index%4)*.45;
+  return `<div class="locker-fighter ${onAir?'locker-on-air':'locker-wander'}" data-fighter-id="${fighter.id}" data-fighter-level="${level}" data-fighter-family="${family}" data-fighter-shiny="${fighter.shiny?'true':'false'}" tabindex="0" role="button" aria-label="${fighterName(fighter)} niveau ${level}, glisser sur une recrue du même niveau" style="--lx:${x}%;--floor-bottom:${floor}px;--delay:-${delay}s;--distance:${6+(index%4)*4}px;--duration:${duration}s">
+    <div class="locker-character ${fighter.shiny?'is-shiny':''}${family==='boxe'?evolutionClass(level):''}"><img src="${imageFor(level,family)}" draggable="false" alt="">${evolutionDecoration(level,family)}<span class="locker-level">${fighter.shiny?'✨ ':''}Niv. ${level}</span></div>
+    <span class="locker-name">${fighter.shiny?'✨ ':''}${fighterName(fighter)}</span></div>`;
 }
 function collectionScreen() {
-  const ready=EQUIPMENT.every(item=>game.equipment[item.id]>0);
-  const onAir=strongestFighters();
-  const assigned=new Set(onAir.map(f=>f.id));
-  const others=game.fighters.filter(f=>!assigned.has(f.id));
-  const display=others.slice(0,16);
-  const rows=Math.max(1,Math.ceil(display.length/3));
-  const rest=others.length-display.length;
+  const family=game.selectedLockerFamily,info=FAMILY_DATA[family];
+  const inventory=inventoryFor(family),equipment=familyEquipment(family);
+  const ready=equipment.every(item=>inventory[item.id]>0);
+  const onAir=strongestFighters(family), assigned=new Set(onAir.map(f=>f.id));
+  const others=familyFighters(family).filter(f=>!assigned.has(f.id));
+  const display=others.slice(0,18),rows=Math.max(1,Math.ceil(display.length/3)),rest=others.length-display.length;
+  const proteinEligible=[...game.fighters].filter(f=>f.level<MAX_FIGHTER_LEVEL).sort(sortFighters);
   return `<span class="kicker">🧤 Les coulisses</span><h1 class="h1">Les vestiaires</h1>
-    <p class="muted">Les boxeurs se promènent dans le vestiaire. <b>Glisse deux combattants du même niveau et de la même rareté l'un sur l'autre pour fusionner.</b> Maintenant jusqu'au stade ${MAX_FIGHTER_LEVEL} !</p>
-    <section class="card locker-panel"><h2>📡 Sur le plateau TV</h2><p class="subnote">Ces deux vedettes restent immobiles, mais tu peux aussi les attraper pour fusionner.</p>
+    <p class="muted">Un vestiaire par famille : fusionne deux combattants du même niveau, de la même famille et de la même rareté.</p>
+    ${familyTabs(family,'select-locker-family')}
+    <section class="card locker-panel"><h2>📡 Sur ${info.channel}</h2><p class="subnote">Les vedettes de cette chaîne peuvent également être fusionnées.</p>
       <div class="locker-onair-strip">${onAir.map((f,i)=>lockerCharacter(f,i,true)).join('')}${onAir.length<2?'<span class="locker-air-empty">Emplacement libre</span>':''}</div></section>
-    <section class="card locker-panel"><div class="locker-heading"><h2>🏠 Dans les coulisses (${others.length})</h2><span class="locker-help">☝️ Glisser pour fusionner</span></div>
-      <div class="locker-room" id="locker-room" style="--locker-height:${Math.max(305,rows*155+130)}px">
-        <div class="locker-poster">BASTON TV ★ CLUB</div><div class="locker-bench"></div>
+    <section class="card locker-panel"><div class="locker-heading"><h2>🏠 Vestiaire ${info.name} (${others.length})</h2><span class="locker-help">☝️ Glisser pour fusionner</span></div>
+      <div class="locker-room ${family==='ninja'?'ninja-locker':''}" id="locker-room" style="--locker-height:${Math.max(305,rows*155+130)}px">
+        <div class="locker-poster">${info.channel.toUpperCase()} ★ CLUB</div><div class="locker-bench"></div>
         ${Array.from({length:rows},(_,i)=>`<div class="locker-floor" style="bottom:${15+i*155}px"></div>`).join('')}
         ${display.map((f,i)=>lockerCharacter(f,i)).join('')}
-        ${!others.length?'<p class="locker-empty">Tous tes boxeurs sont à l’antenne ! Tu peux quand même les fusionner en les faisant glisser l’un sur l’autre ci-dessus.</p>':''}
-      </div>${rest>0?`<p class="subnote">${rest} autre(s) combattant(s) en réserve. Les 16 premiers sont affichés.</p>`:''}
-      <p class="subnote" id="locker-instruction">Normal + normal → normal · Shiny + shiny → shiny. Les mélanges sont impossibles.</p></section>
-    <section class="card"><h2>🎁 Équipements de boxe</h2><div class="eq-grid">${EQUIPMENT.map(item => `<div class="eq-item ${game.equipment[item.id] > 0 ? 'ready' : ''}"><span>${item.icon} ${item.label}</span><b>×${game.equipment[item.id]}</b></div>`).join('')}</div>
-    <button class="action" type="button" data-action="recruit" ${ready ? '' : 'disabled'}>✨ Recruter un Bébé Bourrin</button><p class="subnote">Consomme un exemplaire de chacun des quatre équipements.</p></section>
+        ${!others.length?'<p class="locker-empty">Toutes tes recrues sont sur le plateau TV !</p>':''}
+      </div>${rest?`<p class="subnote">${rest} autre(s) combattant(s) en réserve.</p>`:''}
+      <p class="subnote">Normal + normal → normal · Shiny + shiny → shiny. Pas de mélange entre les familles.</p></section>
+    <section class="card"><h2>🎁 Équipements ${info.name}</h2><div class="eq-grid">${equipment.map(item=>`<div class="eq-item ${inventory[item.id]>0?'ready':''}"><span>${item.icon} ${item.label}</span><b>×${inventory[item.id]}</b></div>`).join('')}</div>
+      <button class="action" type="button" data-action="recruit" ${ready?'':'disabled'}>${info.icon} Recruter : ${familyLevels(family)[1].name}</button>
+      <p class="subnote">Consomme un exemplaire de chaque équipement ${info.name}. Les équipements de Boxe et Ninja ne sont pas interchangeables.</p></section>
     <section class="card protein-panel"><h2>🥤 Protéine d'évolution</h2>
-      <p class="muted">Tu possèdes <b>${game.proteins} protéine(s)</b>. Une seule suffit pour faire passer <b>n'importe quel combattant</b> au niveau suivant, même shiny. Pas de fusion nécessaire !</p>
+      <p class="muted">Tu possèdes <b>${game.proteins} protéine(s)</b>. Utilisable sur les deux familles, même sur un shiny.</p>
       <label for="protein-fighter" class="protein-label">Choisir le bénéficiaire</label>
       <select id="protein-fighter" class="protein-select" ${!game.proteins?'disabled':''}>
-        ${[...game.fighters].filter(f=>f.level<MAX_FIGHTER_LEVEL).sort((a,b)=>b.level-a.level||Number(b.shiny)-Number(a.shiny)).map(f=>`<option value="${f.id}">${f.shiny?'✨ Shiny · ':''}${LEVELS[f.level].name} (niv. ${f.level} → ${f.level+1}) · ${f.id.slice(-4)}</option>`).join('')}
+        ${proteinEligible.map(f=>`<option value="${f.id}">${FAMILY_DATA[familyOf(f)].icon} ${f.shiny?'✨ ':''}${fighterName(f)} (niv. ${f.level} → ${f.level+1}) · ${f.id.slice(-4)}</option>`).join('')}
       </select>
-      <button class="action pink" type="button" data-action="use-protein" ${!game.proteins||game.fighters.every(f=>f.level>=MAX_FIGHTER_LEVEL)?'disabled':''}>🥤 Utiliser une protéine</button>
-      <p class="subnote">Ce bonus est surtout intéressant pour les combattants de haut niveau. Disponible à la boutique pour 500 💎. Un niveau 6 ne peut plus évoluer.</p>
-    </section>
-    `;
+      <button class="action pink" type="button" data-action="use-protein" ${!game.proteins||!proteinEligible.length?'disabled':''}>🥤 Utiliser une protéine</button>
+      <p class="subnote">Disponible pour 500 💎 à la boutique. Le niveau 6 est le maximum.</p></section>`;
 }
-
 // Fusion au glisser-déposer, compatible avec la souris ET le tactile.
 let lockerDrag = null;
 let lockerSelection = null;
@@ -559,17 +618,17 @@ function clearLockerSelection() { lockerSelection=null; document.querySelectorAl
 function fuseFighters(firstId, secondId) {
   if (!firstId || !secondId || firstId===secondId) return false;
   const a=fighterById(firstId), b=fighterById(secondId);
-  if (!a || !b || a.level!==b.level || Boolean(a.shiny)!==Boolean(b.shiny) || a.level>=MAX_FIGHTER_LEVEL) return false;
+  if (!a || !b || familyOf(a)!==familyOf(b) || a.level!==b.level || Boolean(a.shiny)!==Boolean(b.shiny) || a.level>=MAX_FIGHTER_LEVEL) return false;
   const newLevel=a.level+1;
   const companionWasUsed = game.gymCompanionId===a.id || game.gymCompanionId===b.id;
-  const fused = {id:getNewId(),level:newLevel,shiny:Boolean(a.shiny)};
+  const fused = {id:getNewId(),family:familyOf(a),level:newLevel,shiny:Boolean(a.shiny)};
   game.fighters=game.fighters.filter(f=>f.id!==a.id && f.id!==b.id);
   game.fighters.push(fused);
   if (companionWasUsed) game.gymCompanionId=fused.id;
-  if (a.shiny) game.shinyAlbum[newLevel]=true;
+  if (a.shiny) game.shinyAlbum[familyOf(a)][newLevel]=true;
   clearLockerSelection();
   playSound('combo'); save(); render();
-  showToast(`✨ Fusion ! ${LEVELS[newLevel].name}${a.shiny?' shiny':''} obtenu !`);
+  showToast(`✨ Fusion ! ${fighterName(fused)}${a.shiny?' shiny':''} obtenu !`);
   const room=document.querySelector('#locker-room');
   if(room){room.classList.add('fusion-flash');setTimeout(()=>room.classList.remove('fusion-flash'),700);}
   return true;
@@ -600,7 +659,7 @@ function updateLockerDrag(ev) {
   document.querySelectorAll('.locker-fighter.drop-ok,.locker-fighter.drop-no').forEach(e=>e.classList.remove('drop-ok','drop-no'));
   const hit=document.elementFromPoint(ev.clientX,ev.clientY)?.closest('.locker-fighter');
   if(hit && hit.dataset.fighterId!==d.id) {
-    hit.classList.add(Number(hit.dataset.fighterLevel)===d.level && hit.dataset.fighterShiny===d.shiny && d.level<MAX_FIGHTER_LEVEL?'drop-ok':'drop-no');
+    hit.classList.add(Number(hit.dataset.fighterLevel)===d.level && hit.dataset.fighterFamily===d.family && hit.dataset.fighterShiny===d.shiny && d.level<MAX_FIGHTER_LEVEL?'drop-ok':'drop-no');
   }
 }
 function endLockerDrag(ev) {
@@ -626,7 +685,7 @@ document.addEventListener('pointerdown',ev=>{
   ghost.removeAttribute('tabindex');
   ghost.style.width=`${rect.width}px`;ghost.style.height=`${rect.height}px`;
   document.body.appendChild(ghost);
-  lockerDrag={id:el.dataset.fighterId,level:Number(el.dataset.fighterLevel),shiny:el.dataset.fighterShiny,el,ghost,
+  lockerDrag={id:el.dataset.fighterId,level:Number(el.dataset.fighterLevel),family:el.dataset.fighterFamily,shiny:el.dataset.fighterShiny,el,ghost,
     startX:ev.clientX,startY:ev.clientY,offsetX:ev.clientX-rect.left,offsetY:ev.clientY-rect.top,moved:false};
   el.classList.add('drag-source');
   updateLockerDrag(ev);
@@ -649,14 +708,14 @@ function eggSlotHtml(egg) {
     <div class="egg-visual ${revealed?'egg-glowing':''}" aria-hidden="true">🥚</div>
     <strong>${badge} ${name}</strong>
     ${state==='incubating'||state==='glowing'?`<small class="egg-countdown">${readableDuration(eggTimeLeft(egg))}</small>`:''}
-    ${state==='stock'?`<button class="egg-button" data-action="incubate" data-egg-id="${egg.id}">Incuber</button>`:''}
+    ${state==='stock'?`<label class="egg-family-label">Famille : <select class="egg-family-select" data-egg-choice="${egg.id}">${FAMILY_ORDER.filter(f=>isFamilyUnlocked(f)).map(f=>`<option value="${f}" ${familyOf(egg)===f?'selected':''}>${FAMILY_DATA[f].icon} ${FAMILY_DATA[f].name}</option>`).join('')}</select></label><button class="egg-button" data-action="incubate" data-egg-id="${egg.id}">Incuber</button>`:''}
     ${state==='ready'?`<button class="egg-button" data-action="hatch" data-egg-id="${egg.id}">Ouvrir l'œuf</button>`:''}
     ${state==='incubating'||state==='glowing'?`<button class="egg-button egg-gems-button" data-action="gem-egg" data-egg-id="${egg.id}" ${game.gems<GEM_ACCEL_COST?'disabled':''}>💎 ${GEM_ACCEL_COST} gemmes · −30 min</button>
     ${game.devMode?`<button class="egg-test-button" data-action="test-egg" data-egg-id="${egg.id}">⏩ Accélérer (test)</button>`:''}`:''}
   </div>`;
 }
 function laterScreen() {
-  const shinyEntries=Array.from({length:MAX_FIGHTER_LEVEL},(_,i)=>i+1).map(level=>`<div class="album-entry ${game.shinyAlbum[level]?'unlocked':''}">${game.shinyAlbum[level]?'✨':'🔒'}<small>Niv. ${level}</small></div>`).join('');
+  const shinyEntries=FAMILY_ORDER.filter(f=>isFamilyUnlocked(f)).map(f=>`<h3>${FAMILY_DATA[f].icon} ${FAMILY_DATA[f].name}</h3><div class="shiny-album">${Array.from({length:MAX_FIGHTER_LEVEL},(_,i)=>i+1).map(level=>`<div class="album-entry ${game.shinyAlbum[f]?.[level]?'unlocked':''}">${game.shinyAlbum[f]?.[level]?'✨':'🔒'}<small>Niv. ${level}</small></div>`).join('')}</div>`).join('');
   const freeReady = canClaimFreeShopEgg();
   const freeRemaining = freeShopEggRemaining();
   return `<span class="kicker">🛒 Boutique & incubateur</span><h1 class="h1">Boutique des œufs</h1>
@@ -682,7 +741,7 @@ function laterScreen() {
       ${!game.eggs.length?'<p class="subnote">Achète un œuf ou gagne sept combats pour remplir l’incubateur.</p>':''}
       <p class="subnote">Les gemmes réduisent l'incubation de 30 minutes. Les shinies gardent les mêmes statistiques que les normaux.</p>
     </section>
-    <section class="card"><h2>✨ Album shiny — Les Bourrins</h2><div class="shiny-album">${shinyEntries}</div>
+    <section class="card"><h2>✨ Album shiny — Toutes les familles</h2>${shinyEntries}
       <p class="muted">Chaque nouvelle évolution shiny découverte rapporte <b>+1 % de revenus TV permanents</b>. Bonus actuel : <b>+${shinyBonusPercent()} %</b>.</p>
     </section>
     <div class="tip">Fusion : normal + normal ou shiny + shiny seulement, à niveau égal. Les outils d'œufs de test sont réservés au mode développeur dans les Paramètres.</div>`;
@@ -697,6 +756,8 @@ function addTestEgg(forceShiny=false) {
 function incubateEgg(id) {
   const egg=game.eggs.find(e=>e.id===id);
   if (!egg || egg.startedAt || game.eggs.some(e=>e.startedAt)) return showToast('Un seul œuf peut être dans l’incubateur à la fois. Ouvre le précédent.');
+  const selectedFamily=document.querySelector(`[data-egg-choice="${id}"]`)?.value || familyOf(egg);
+  egg.family=isFamilyUnlocked(selectedFamily)?selectedFamily:'boxe';
   const shiny=egg.testForcedShiny || egg.guaranteedShiny || Math.random()<SHINY_RATE;
   egg.shiny=shiny;
   egg.level=shiny?(Math.random()<.05?2:1):(Math.random()<.35?2:1);
@@ -706,12 +767,12 @@ function incubateEgg(id) {
 function hatchEgg(id) {
   const egg=game.eggs.find(e=>e.id===id);
   if (!egg || eggState(egg)!=='ready') return;
-  const fighter={id:getNewId(),level:egg.level,shiny:Boolean(egg.shiny)};
+  const fighter={id:getNewId(),family:familyOf(egg),level:egg.level,shiny:Boolean(egg.shiny)};
   game.fighters.push(fighter);
-  if (fighter.shiny) game.shinyAlbum[fighter.level]=true;
+  if (fighter.shiny) game.shinyAlbum[familyOf(fighter)][fighter.level]=true;
   game.eggs=game.eggs.filter(e=>e.id!==id);
   playSound('recruit');save();render();
-  showToast(`${fighter.shiny?'✨ SHINY ! ':'🎉 '}${LEVELS[fighter.level].name} niveau ${fighter.level} obtenu !`);
+  showToast(`${fighter.shiny?'✨ SHINY ! ':'🎉 '}${fighterName(fighter)} niveau ${fighter.level} obtenu !`);
 }
 function accelerateEggGems(id) {
   const egg=game.eggs.find(e=>e.id===id);
@@ -758,11 +819,11 @@ function useProtein() {
   const fighter=game.fighters.find(f=>f.id===id);
   if (!fighter) return showToast('Choisis un combattant valide.');
   if (fighter.level >= MAX_FIGHTER_LEVEL) return showToast('Ce combattant est déjà au niveau 6.');
-  const before=LEVELS[fighter.level].name, after=LEVELS[fighter.level+1].name;
+  const before=fighterName(fighter), after=familyLevels(familyOf(fighter))[fighter.level+1].name;
   if (!window.confirm(`Utiliser 1 protéine sur ${before}${fighter.shiny?' ✨ shiny':''} ? Il deviendra ${after}, sans utiliser de deuxième combattant.`)) return;
   fighter.level++;
   game.proteins--;
-  if (fighter.shiny) game.shinyAlbum[fighter.level]=true;
+  if (fighter.shiny) game.shinyAlbum[familyOf(fighter)][fighter.level]=true;
   clearLockerSelection();
   playSound('recruit'); save(); render();
   showToast(`🥤 Évolution réussie : ${after}${fighter.shiny?' ✨ shiny':''} !`);
@@ -779,9 +840,9 @@ function accelerateEggTest(id) {
 // Les familles Ninja et Sumo sont pour l'instant jouables seulement en démonstration
 // développeur. Les illustrations de famille restent à dessiner.
 const FIGHT_FAMILIES = {
-  boxe: {name:'Bourrins', emoji:'🥊', speed:10, speedPerLevel:2.4, hp:1, attack:1, strikes:1, parries:1, gaugeMs:1760, attackZones:[53,78,85], defenseZones:[54,78,85]},
-  ninja: {name:'Ninjas', emoji:'🥷', speed:19, speedPerLevel:3.2, hp:.82, attack:.71, strikes:2, parries:1, gaugeMs:1540, attackZones:[50,77,84], defenseZones:[52,77,84]},
-  sumo: {name:'Sumos', emoji:'🥋', speed:5, speedPerLevel:1.6, hp:1.5, attack:.9, strikes:1, parries:2, gaugeMs:2070, attackZones:[56,80,87], defenseZones:[56,80,87]}
+  boxe: {name:'Bourrins', emoji:'🥊', speed:10, speedPerLevel:2.4, hp:1, attack:1, strikes:1, parries:1, gaugeMs:1408, attackZones:[53,78,85], defenseZones:[54,78,85]},
+  ninja: {name:'Ninjas', emoji:'🥷', speed:19, speedPerLevel:3.2, hp:.82, attack:.71, strikes:2, parries:1, gaugeMs:1232, attackZones:[50,77,84], defenseZones:[52,77,84]},
+  sumo: {name:'Sumos', emoji:'🥋', speed:5, speedPerLevel:1.6, hp:1.5, attack:.9, strikes:1, parries:2, gaugeMs:1656, attackZones:[56,80,87], defenseZones:[56,80,87]}
 };
 const ATTACK_MULTIPLIERS = [0.5,1,1.75,0];
 const DEFENSE_MULTIPLIERS = [0.25,0.5,0.90,0];
@@ -817,6 +878,7 @@ function chooseDuelOpponent(playerLevel) {
 }
 function familyVisual(family, level, side) {
   if (family==='boxe') return `<img class="breathing" src="${imageFor(level)}" alt="Boxeur de la famille Bourrins">${evolutionDecoration(level)}`;
+  if (family==='ninja') return `<img class="breathing" src="${imageFor(level,'ninja')}" alt="Combattant Ninja">`;
   if (family==='sumo') return `<div class="fight-style-preview sumo" role="img" aria-label="Personnage sumo provisoire"><div class="sumo-doodle"><span class="sumo-face">😤</span><div class="sumo-body"><span class="sumo-belt"></span></div><div class="sumo-feet"></div></div><small>SUMOS</small></div>`;
   return `<div class="fight-style-preview ninja" role="img" aria-label="Personnage ninja provisoire"><span>🥷</span><small>NINJAS</small></div>`;
 }
@@ -850,28 +912,25 @@ function combatGaugeHtml() {
     <p class="subnote combat-single-pass">La jauge ne passe qu'une fois. Appuie avant la zone rouge !</p>`;
 }
 function combatScreen() {
-  const fighter=strongestFighters()[0];
-  if (!duel) return `<span class="kicker">🎬 Arena Baston TV</span><h1 class="h1">Combat au timing !</h1>
-    <p class="muted">Le plus rapide commence. Appuie au bon moment pour frapper ou te défendre. Attention : un coup bleu est puissant, mais une fraction de seconde trop tard = rouge, donc raté !</p>
-    <div class="fight-arena fight-preview">
-      <div class="ring-glow"></div><div class="ring-floor"></div>
-      <div class="fight-actor player-actor ${fighter.shiny?'shiny-actor':''}${evolutionClass(fighter.level)}">${familyVisual('boxe',fighter.level,'player')}</div>
-      <div class="fight-actor enemy-actor">${familyVisual('ninja',Math.max(1,fighter.level),'enemy')}</div>
-      <span class="ring-versus">VS</span>
-    </div>
-    <section class="card"><h2>🥊 ${LEVELS[fighter.level].name} contre un adversaire surprise</h2>
-      <p class="muted">Tu joues un Bourrin équilibré. Le ring peut t'opposer un boxeur, un ninja rapide avec deux coups, ou un sumo costaud avec deux parades.</p>
-      <button class="action" type="button" data-action="start-duel" data-family="boxe">⚡ Entrer sur le ring</button>
-      ${game.devMode?`<div class="combat-dev-tests"><small>🧪 Tester les styles avant d'avoir les familles :</small><button class="action secondary" type="button" data-action="start-duel" data-family="ninja">🥷 Jouer Ninja (test)</button><button class="action pink" type="button" data-action="start-duel" data-family="sumo">🥋 Jouer Sumo (test)</button></div>`:''}
-    </section>
-    <div class="tip"><b>Jauge d'attaque :</b> gris = 50 %, vert = 100 %, bleu = 175 %, rouge = 0 %. <b>Jauge de défense :</b> gris = 25 %, vert = 50 %, bleu = 90 %, rouge = 0 %. Tous les 7 combats gagnés, récupère un œuf à la boutique.</div>`;
+  const selected=game.fighters.find(f=>f.id===game.selectedCombatId)||[...game.fighters].sort(sortFighters)[0];
+  if (!duel) return `<span class="kicker">🎬 Arène Baston TV</span><h1 class="h1">Combat au timing !</h1>
+    <p class="muted">Sélectionne n'importe quel combattant de ta collection. Les Ninjas sont plus rapides et frappent deux fois, mais encaissent moins bien.</p>
+    <section class="card"><h2>⚔️ Choisir mon combattant</h2>
+      <div class="combat-roster">${[...game.fighters].sort(sortFighters).map(f=>`<button class="combat-roster-entry ${selected?.id===f.id?'is-selected':''}" data-action="select-combat-fighter" data-fighter-id="${f.id}" type="button">
+        <img src="${imageFor(f.level,familyOf(f))}" alt=""><span>${FAMILY_DATA[familyOf(f)].icon} ${fighterName(f)} ${f.shiny?'✨':''}<small>Niv. ${f.level} · ${FIGHT_FAMILIES[familyOf(f)].strikes} frappe(s) / tour</small></span>${selected?.id===f.id?'✓':''}</button>`).join('')}</div></section>
+    <div class="fight-arena fight-preview"><div class="ring-glow"></div><div class="ring-floor"></div>
+      <div class="fight-actor player-actor ${selected?.shiny?'shiny-actor':''}">${familyVisual(familyOf(selected),selected.level,'player')}</div>
+      <div class="fight-actor enemy-actor">${familyVisual('ninja',Math.max(1,selected.level),'enemy')}</div><span class="ring-versus">VS</span></div>
+    <button class="action" type="button" data-action="start-duel">⚡ Combattre avec ${fighterName(selected)}</button>
+    ${game.devMode?`<div class="combat-dev-tests"><small>🧪 Tester les styles (sans recruter) :</small><button class="action pink" type="button" data-action="start-duel" data-family="sumo">🥋 Jouer Sumo (test)</button></div>`:''}
+    <div class="tip"><b>Vitesse du curseur : +25 %.</b> Bleu = 175 % des dégâts en attaque, 90 % de parade en défense. Le rouge rate l'action.</div>`;
   const end=Boolean(duel.result);
   const playerFamily=FIGHT_FAMILIES[duel.playerFamily];
   const enemyFamily=FIGHT_FAMILIES[duel.opponent.family];
   return `<span class="kicker">⚔️ Baston TV · Ring de duel</span><h1 class="h1">${end ? duel.result==='win'?'Victoire ! 🏆':'Défaite ! 💥':'Le choc des familles !'}</h1>
     <div class="fight-speed-banner"><span>${playerFamily.emoji} ${playerFamily.name} · ⚡ ${duel.playerSpeed}</span><span>${enemyFamily.emoji} ${enemyFamily.name} · ⚡ ${duel.enemySpeed}</span></div>
     <div class="fight-top">
-      <div class="combat-unit"><strong>${duel.playerFamily==='boxe'?LEVELS[duel.level].name:playerFamily.name+' (démo)'}</strong><div class="hpbar"><span id="combat-player-bar" style="width:${100*duel.playerHP/duel.maxPlayerHP}%"></span></div><small id="combat-player-hp">❤️ ${duel.playerHP} / ${duel.maxPlayerHP}</small></div>
+      <div class="combat-unit"><strong>${duel.playerName}</strong><div class="hpbar"><span id="combat-player-bar" style="width:${100*duel.playerHP/duel.maxPlayerHP}%"></span></div><small id="combat-player-hp">❤️ ${duel.playerHP} / ${duel.maxPlayerHP}</small></div>
       <strong class="versus-label">VS</strong>
       <div class="combat-unit right"><strong>${duel.opponent.name}</strong><div class="hpbar"><span id="combat-enemy-bar" style="width:${100*duel.enemyHP/duel.maxEnemyHP}%"></span></div><small id="combat-enemy-hp">❤️ ${duel.enemyHP} / ${duel.maxEnemyHP}</small></div>
     </div>
@@ -883,27 +942,28 @@ function combatScreen() {
       ${end?`<div class="fight-end-overlay ${duel.result}"><strong>${duel.result==='win'?'🏆 VICTOIRE !':'💥 DÉFAITE !'}</strong><span>${duel.result==='win'?'+75 pièces TV':'Retente ta chance !'}</span></div>`:''}
     </div>
     <p class="combat-log" id="combat-log" aria-live="polite">${duel.log}</p>
-    ${end?'<button class="action" type="button" data-action="start-duel" data-family="boxe">🔁 Refaire un combat</button><button class="action secondary" data-action="go-gym" type="button">🥊 Retour à l’entraînement</button>':''}
+    ${end?'<button class="action" type="button" data-action="start-duel">🔁 Refaire un combat</button><button class="action secondary" data-action="choose-fighter-again" type="button">🧤 Changer de combattant</button><button class="action secondary" data-action="go-gym" type="button">🥊 Retour à l’entraînement</button>':''}
     <p class="subnote">${playerFamily.emoji} ${playerFamily.name} : ${playerFamily.strikes} frappe(s) par tour, ${playerFamily.parries} jauge(s) de défense. ${enemyFamily.emoji} ${enemyFamily.name} : ${enemyFamily.strikes} frappe(s), ${enemyFamily.parries} parade(s).</p>`;
 }
-function startDuel(requestedFamily='boxe') {
+function startDuel(requestedFamily=null) {
   cancelCombatTimers();
-  const lead=strongestFighters()[0];
-  const family=game.devMode&&FIGHT_FAMILIES[requestedFamily]?requestedFamily:'boxe';
-  const opponent=chooseDuelOpponent(lead.level);
-  const p=fighterStats(family,lead.level), e=fighterStats(opponent.family,opponent.level);
+  const selected=game.fighters.find(f=>f.id===game.selectedCombatId)||[...game.fighters].sort(sortFighters)[0];
+  if(!selected)return;
+  const level=selected.level;
+  const family=game.devMode&&requestedFamily==='sumo'?'sumo':familyOf(selected);
+  const opponent=chooseDuelOpponent(level);
+  const p=fighterStats(family,level),e=fighterStats(opponent.family,opponent.level);
   const first=p.speed===e.speed?(Math.random()<.5?'player':'enemy'):(p.speed>e.speed?'player':'enemy');
-  duel={level:lead.level, shiny:Boolean(lead.shiny), playerFamily:family, opponent,
-    maxPlayerHP:p.hp,playerHP:p.hp, maxEnemyHP:e.hp,enemyHP:e.hp,
-    playerSpeed:p.speed,enemySpeed:e.speed, attacker:first, strikeIndex:1,
-    strikeTotal:first==='player'?p.strikes:e.strikes, gauge:null, incoming:null,
-    bestDefense:0, phase:'waiting', result:null,
+  duel={level,shiny:Boolean(selected.shiny),playerFamily:family,playerName:family==='sumo'?'Sumo (test)':fighterName(selected),opponent,
+    maxPlayerHP:p.hp,playerHP:p.hp,maxEnemyHP:e.hp,enemyHP:e.hp,
+    playerSpeed:p.speed,enemySpeed:e.speed,attacker:first,strikeIndex:1,
+    strikeTotal:first==='player'?p.strikes:e.strikes,gauge:null,incoming:null,
+    bestDefense:0,phase:'waiting',result:null,
     log:`⚡ ${first==='player'?'Tu es le plus rapide : commence !':`${opponent.name} est plus rapide : prépare ta défense !`}`};
-  currentView='combat'; render();
-  window.scrollTo({top:0,behavior:'instant'});
-  const fight=duel;
-  combatLater(()=>{if(duel===fight&&!duel.result)startCombatStrike();},750);
+  currentView='combat';render();window.scrollTo({top:0,behavior:'instant'});
+  const fight=duel;combatLater(()=>{if(duel===fight&&!duel.result)startCombatStrike();},750);
 }
+
 function refreshDuelUI() {
   if(!duel||currentView!=='combat')return;
   for(const side of ['player','enemy']){
@@ -1119,7 +1179,7 @@ function settingsScreen() {
       <button type="button" class="action reset-button" data-action="reset-account">Réinitialiser ma progression</button>
       <p class="subnote">Un double contrôle de confirmation évite toute suppression accidentelle.</p>
     </section>
-    <p class="subnote">Version 0.15 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
+    <p class="subnote">Version 0.16 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
 }
 function adjustVolume(name, value) {
   if (!['menus','effects','music'].includes(name)) return;
@@ -1198,26 +1258,54 @@ function changeView(next) {
     if (!window.confirm('Quitter le combat en cours ? Tu n’obtiendras pas de récompense pour ce duel.')) return;
     cancelCombatTimers(); duel = null;
   }
+  if(duel?.result && (next!=='combat'||currentView==='combat')){cancelCombatTimers();duel=null;}
   clearLockerSelection();
   currentView = next;
   render();
   window.scrollTo({top:0,behavior:"instant"});
 }
 function upgrade() {
-  const cost = nextStudioUpgradeCost();
-  if (!cost || game.studioLevel >= STUDIO_MAX_LEVEL || game.coins < cost) return;
-  game.coins -= cost;
-  game.studioLevel++;
-  save(); render(); showToast(`Studio amélioré ! Bonus actuel : +${currentStudioBonusPercent()} %.`);
+  const family=game.selectedChannel,cost=nextChannelUpgradeCost(family);
+  if(!isFamilyUnlocked(family)||!cost||game.coins<cost)return;
+  advanceCoins(); if(game.coins<cost)return;
+  game.coins-=cost;game.channelLevels[family]++;
+  save();render();showToast(`📺 ${FAMILY_DATA[family].channel} niveau ${channelLevel(family)} : +${channelBonusPercent(family)} % !`);
 }
+function unlockNinja() {
+  if(game.unlockedFamilies.ninja||game.coins<NINJA_UNLOCK_COST)return;
+  advanceCoins(); if(game.coins<NINJA_UNLOCK_COST)return;
+  game.coins-=NINJA_UNLOCK_COST;
+  game.unlockedFamilies.ninja=true;
+  const first={id:getNewId(),family:'ninja',level:1,shiny:false};
+  game.fighters.push(first);game.selectedChannel='ninja';game.selectedLockerFamily='ninja';game.selectedGymFamily='ninja';
+  save();render();playSound('recruit');showToast('🥷 Ninja TV débloquée ! Ton premier Bébé Ninja rejoint le dojo.');
+}
+function selectFamily(screen,family) {
+  if(!FAMILY_ORDER.includes(family))return;
+  if(screen!=='home'&&!isFamilyUnlocked(family))return showToast('Débloque le dojo Ninja sur la page TV !');
+  const key={home:'selectedChannel',gym:'selectedGymFamily',collection:'selectedLockerFamily'}[screen];
+  if(!key)return;
+  game[key]=family; if(screen==='gym')game.gymCompanionId=null;
+  if(screen==='home'){viewerShift=0;viewerDelta=0;}
+  save();render();
+}
+function selectCombatFighter(id) {
+  if(duel)return;
+  const f=fighterById(id);if(!f)return;
+  game.selectedCombatId=id;save();render();
+}
+
 function startTraining() {
-  const cost = trainingCost();
+  const family=game.selectedGymFamily;
+  if(!isFamilyUnlocked(family))return;
+  const cost=trainingCost(family);
   if (training || game.coins < cost) return;
   game.coins -= cost;
   game.sessions++;
+  game.sessionsByFamily[family]++;
   const chosen = gymCompanion();
-  training = { start: performance.now(), end: performance.now() + TRAINING_MS, next: 0, hits: 0, misses: 0, wrongClicks: 0, combo: 0, best: 0, spotX: 50, spotY: 45,
-    companion: chosen ? { id:chosen.id, level:chosen.level, shiny:Boolean(chosen.shiny) } : null };
+  training = {family, start: performance.now(), end: performance.now() + TRAINING_MS, next: 0, hits: 0, misses: 0, wrongClicks: 0, combo: 0, best: 0, spotX: 50, spotY: 45,
+    companion: chosen ? { id:chosen.id, family:familyOf(chosen), level:chosen.level, shiny:Boolean(chosen.shiny) } : null };
   latestReward = null;
   save(); render();
   moveSpot();
@@ -1333,42 +1421,46 @@ function hitSpot() {
   if (hits) hits.textContent = String(training.hits);
   if (combo) combo.textContent = String(training.combo);
 }
-function chooseEquipment() {
-  // Petit coup de pouce : une tenue incomplète a un peu plus de chances d'être complétée.
-  const missing = EQUIPMENT.filter(item => game.equipment[item.id] === 0);
-  const list = missing.length && Math.random() < .55 ? missing : EQUIPMENT;
-  return list[Math.floor(Math.random() * list.length)].id;
+function chooseEquipment(family) {
+  const equipment=familyEquipment(family),inventory=inventoryFor(family);
+  const missing=equipment.filter(item=>inventory[item.id]===0);
+  const list=missing.length&&Math.random()<.55?missing:equipment;
+  return list[Math.floor(Math.random()*list.length)].id;
 }
 function finishTraining() {
-  if (!training) return;
-  const {hits, best} = training;
-  // Récompense plus exigeante : 0 si la séance est ratée, 1 ou 2 équipements
-  // en temps normal, puis des bonus seulement pour un très bon combo sans faute.
-  let total = hits < 5 ? 0 : hits < 11 ? 1 : 2;
-  if (training.misses === 0 && best >= 10) total++;
-  if (training.misses === 0 && best >= 16) total++;
-  total = Math.min(total, 4);
-  const items = [];
-  for (let i = 0; i < total; i++) {
-    const id = chooseEquipment();
-    game.equipment[id]++;
-    items.push(id);
-  }
-  latestReward = {hits,best,items,misses: training.misses};
-  playSound(total >= 3 ? 'combo' : total===0 ? 'lose' : 'recruit');
-  training = null;
-  save(); render();
-  showToast(total ? `${total} équipement(s) gagné(s) ! Va voir les vestiaires.` : 'Aucun équipement : vise les cibles plus rapidement !');
+  if(!training)return;
+  const {hits,best,family}=training;
+  let total=hits<5?0:hits<11?1:2;
+  if(training.misses===0&&best>=10)total++;
+  if(training.misses===0&&best>=16)total++;
+  total=Math.min(total,4);
+  const items=[],inventory=inventoryFor(family);
+  for(let i=0;i<total;i++) {const id=chooseEquipment(family);inventory[id]++;items.push(id);}
+  latestReward={hits,best,items,family,misses:training.misses};
+  playSound(total>=3?'combo':total===0?'lose':'recruit');
+  training=null;save();render();
+  showToast(total?`${total} équipement(s) ${FAMILY_DATA[family].name} gagné(s) !`:'Aucun équipement : essaie de faire un meilleur combo.');
 }
 function recruit() {
-  if (!EQUIPMENT.every(item => game.equipment[item.id] > 0)) return;
-  EQUIPMENT.forEach(item => game.equipment[item.id]--);
-  game.fighters.push({id:getNewId(),level:1});
-  playSound('recruit'); save();render();showToast("Nouveau combattant recruté : Bébé Bourrin !");
+  const family=game.selectedLockerFamily,items=familyEquipment(family),inventory=inventoryFor(family);
+  if(!isFamilyUnlocked(family)||!items.every(item=>inventory[item.id]>0))return;
+  items.forEach(item=>inventory[item.id]--);
+  const fighter={id:getNewId(),family,level:1,shiny:false};
+  game.fighters.push(fighter);
+  playSound('recruit');save();render();showToast(`${FAMILY_DATA[family].icon} ${fighterName(fighter)} recruté !`);
 }
+
 document.addEventListener('input', event => {
   const volume=event.target?.dataset?.volume;
   if (volume) adjustVolume(volume,event.target.value);
+});
+document.addEventListener('change', event => {
+  const eggId=event.target?.dataset?.eggChoice;
+  if(!eggId)return;
+  const egg=game.eggs.find(e=>e.id===eggId);
+  if(egg && !egg.startedAt && isFamilyUnlocked(event.target.value)) {
+    egg.family=event.target.value;save();
+  }
 });
 // Valider un code aussi avec la touche Entrée sur ordinateur.
 document.addEventListener('keydown', event => {
@@ -1391,10 +1483,16 @@ document.addEventListener("click", event => {
   switch(target.dataset.action) {
     case "go-gym": changeView("gym"); break;
     case "go-combat": changeView("combat"); break;
-    case "start-duel": startDuel(target.dataset.family || 'boxe'); break;
+    case "start-duel": startDuel(target.dataset.family || null); break;
+    case "choose-fighter-again": if(duel?.result){cancelCombatTimers();duel=null;render();} break;
     case "combat-tap": tapCombatGauge(); break;
     case "combat-ready": activateCombatGauge(); break;
     case "upgrade": upgrade(); break;
+    case "unlock-ninja": unlockNinja(); break;
+    case "select-channel": selectFamily('home',target.dataset.family); break;
+    case "select-gym-family": selectFamily('gym',target.dataset.family); break;
+    case "select-locker-family": selectFamily('collection',target.dataset.family); break;
+    case "select-combat-fighter": selectCombatFighter(target.dataset.fighterId); break;
     case "start-training": startTraining(); break;
     case "choose-companion": chooseGymCompanion(target.dataset.fighterId); break;
     case "toggle-sound": toggleSound(); break;

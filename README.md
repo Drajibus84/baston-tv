@@ -1,25 +1,24 @@
-# Baston TV — Prototype v0.15
+# Baston TV — Prototype v0.16
 
-## Publier sur GitHub Pages
+Deux familles recrutables : Bourrins et Ninjas. Sauvegarde locale rétrocompatible avec la v0.15 (`bastontv-save-v03`).
 
-1. Décompresser l’archive GitHub (ne pas envoyer le ZIP lui-même).
-2. Ouvrir le dépôt `Drajibus84/baston-tv` → **Add file → Upload files**.
-3. Déposer **tous les fichiers à la racine**, avec le dossier `assets/` entier (notamment `index.html`, `app.js`, `styles.css`, `sw.js`).
-4. **Commit changes**, vérifier le déploiement dans **Actions**.
-5. Sur le téléphone, fermer complètement Baston TV, puis rouvrir. Si l'ancienne version subsiste, vérifier la version dans le navigateur avant de réessayer.
+## Nouveautés
 
-**Ne pas désinstaller l’application ni vider ses données**, car la collection est enregistrée localement dans le navigateur.
+- Déblocage du dojo Ninja (2 000 pièces) avec un Bébé Ninja offert à l’ouverture.
+- Chaînes **Boxe TV** et **Ninja TV**, chacune avec ses deux combattants en direct et **10 niveaux d’amélioration** (+100 % maximum par chaîne).
+- Migration des anciens niveaux du studio vers Boxe TV, en préservant le bonus acquis : niv. 1→1, 2→3, 3→5, 4→7, 5→10.
+- Vestiaires séparés, équipements propres aux deux familles et entraînement ciblé. Entraînement Ninja 35 % plus cher.
+- 6 illustrations Ninja ; fusions et protéines indépendantes des familles.
+- Choix du combattant depuis la collection triée par niveau décroissant sur l’écran Combat.
+- Ninja jouable réellement avec ses deux frappes et sa vitesse élevée ; Sumo toujours adversaire (style provisoire).
+- Vitesse des jauges de combat +25 % (durée divisée par 1,25).
+- Choix de famille pour les œufs au lancement de l’incubation (famille débloquée uniquement).
+- Les revenus TV des différentes chaînes s’ajoutent, et les shinies découverts donnent un bonus global.
 
-## Nouveautés v0.15
+## Installer sur GitHub Pages
 
-- Sac et corde regroupés dans un pendule : ils oscillent **ensemble** lorsqu’on frappe une cible.
-- Bouton **Commencer la séance** directement **en dessous du sac**, avant le choix de l’accompagnateur. Les prix et les résultats restent accessibles en défilant.
-- Carte **Protéine d’évolution** déplacée sous la carte « Équipements de boxe / Recruter » dans les vestiaires.
-- TV de l’accueil : les deux combattants se font face et s’échangent des petits coups avec « POW ! », « BAM ! », « TCHAK ! », « PAF ! ». Aucun dégât, son ni impact économique.
-- Jauges de combat 10 % plus rapides et aiguille plus fine.
-- Protection bleue abaissée de **100 % à 90 %** ; les attaques non ratées infligent toujours au moins **1 point de dégâts** même en cas de très bonne parade.
-- Compatibilité conservée avec les sauvegardes de la v0.14 (`bastontv-save-v03`), les pièces, gemmes, œufs, shinies, protéines et codes déjà utilisés.
+Décompresser le ZIP GitHub Pages, puis charger **tous les fichiers qu'il contient** à la racine de `Drajibus84/baston-tv`, y compris `assets/ninja-1.png` à `ninja-6.png` et les images de boxe. Conserver l’arborescence et valider **Commit changes**. Attendre le déploiement GitHub Actions, puis relancer l’app PWA.
 
-## Jouer hors ligne
+## Notes
 
-Serveur local VS Code / Live Server ou GitHub Pages. Le fichier `sw.js` utilise désormais le cache `baston-tv-v015`.
+Les fichiers `index.html`, `styles.css`, `app.js`, `manifest.webmanifest` et `sw.js` doivent rester au même niveau. Les prix et statistiques sont provisoires et peuvent être équilibrés après les tests sur téléphone. Les données sont stockées localement, pas synchronisées entre appareils. N’efface pas les données du site pour mettre à jour.

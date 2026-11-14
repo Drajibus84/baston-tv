@@ -339,3 +339,21 @@
 @media(prefers-reduced-motion:reduce){
  .bag-swing.bag-swing-hit,.tv-actor,.tv-strike .tv-actor,.tv-flinch .tv-actor,.tv-pow{animation:none!important}
 }
+
+/* v0.16 — deux familles, canaux et vestiaires spécialisés */
+.family-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}
+.family-tab{background:#f1e5ff;border:2px solid #bb8bec;color:#4c208c;border-radius:14px;font-weight:900;font-size:13px;padding:12px 6px;min-width:0}
+.family-tab.active{color:#fff;background:linear-gradient(120deg,#6c28c2,#9941db);border-color:#ffe361;box-shadow:0 3px 0 #44127a}
+.family-tab:disabled{opacity:.58;cursor:not-allowed}
+.tv-stage.tv-ninja{background:radial-gradient(ellipse at 50% 10%,#bda0ff 0%,#67309c 56%,#1e153a 100%)}
+.tv-ninja .fighter-onair{border-color:#a7ffcf}
+.unlock-panel{background:linear-gradient(135deg,#f8efff,#e5d3fd);border-color:#b788e5}
+.ninja-locker{background:linear-gradient(135deg,#b3a2e9,#755dba 65%,#4d347a)!important}
+.combat-roster{display:grid;grid-template-columns:1fr;gap:8px;max-height:320px;overflow-y:auto;overscroll-behavior:contain;padding:3px}
+.combat-roster-entry{display:flex;align-items:center;gap:12px;width:100%;padding:6px 10px;border:2px solid #e6d1ff;background:#f9f4ff;border-radius:14px;text-align:left;color:#351767;font-size:12px;font-weight:900}
+.combat-roster-entry img{width:53px;height:57px;object-fit:contain;flex-shrink:0}
+.combat-roster-entry span{flex:1;min-width:0}.combat-roster-entry small{display:block;color:#786195;margin-top:3px;font-size:10px}
+.combat-roster-entry.is-selected{background:#e9ffe8;border-color:#40bc69}
+.egg-family-label{font-size:10px;display:flex;flex-direction:column;gap:4px;font-weight:900;width:100%}
+.egg-family-select{width:100%;font-size:12px;padding:5px;border-radius:9px;border:1px solid #c6a5ef;background:white}
+@media(max-width:365px){.family-tab{font-size:11px}.combat-roster-entry img{width:43px;height:46px}}
