@@ -1,5 +1,5 @@
-// Cache PWA v0.16. Network-first pour HTML/CSS/JS afin de voir les mises à jour publiées.
-const CACHE = "baston-tv-v016";
+// Cache PWA v0.17. Network-first pour HTML/CSS/JS afin de voir les mises à jour publiées.
+const CACHE = "baston-tv-v017";
 const FILES = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./assets/icon-192.png", "./assets/icon-512.png", "./assets/boxeur-1.png", "./assets/boxeur-2.png", "./assets/boxeur-3.png", "./assets/boxeur-4.png", "./assets/boxeur-5.png", "./assets/boxeur-6.png", "./assets/ninja-1.png", "./assets/ninja-2.png", "./assets/ninja-3.png", "./assets/ninja-4.png", "./assets/ninja-5.png", "./assets/ninja-6.png", "./assets/audio/clic.wav", "./assets/audio/confirmation.wav", "./assets/audio/sac-frappe.wav", "./assets/audio/coup-rapide.wav", "./assets/audio/uppercut.wav", "./assets/audio/riposte.wav"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting()));

@@ -357,3 +357,66 @@
 .egg-family-label{font-size:10px;display:flex;flex-direction:column;gap:4px;font-weight:900;width:100%}
 .egg-family-select{width:100%;font-size:12px;padding:5px;border-radius:9px;border:1px solid #c6a5ef;background:white}
 @media(max-width:365px){.family-tab{font-size:11px}.combat-roster-entry img{width:43px;height:46px}}
+
+
+/* v0.17 — rangées du vestiaire : plateformes solides, personnages posés dessus. */
+.locker-room{background:linear-gradient(180deg,#aa93d5,#c0a7df 60%,#9b7ab8)!important;}
+.locker-room.ninja-locker{background:linear-gradient(180deg,#7860bf,#9a83d0 58%,#6f55ab)!important;}
+.locker-room::after{display:none;}
+.locker-floor{
+  height:19px;
+  background:linear-gradient(180deg,#f6e6c2 0 18%,#ae7548 20% 48%,#724668 75%,#603a64);
+  border-top:3px solid #fff0ba;
+  border-bottom:3px solid #48214c;
+  box-shadow:0 9px 12px #32204450;
+  opacity:1;
+  z-index:2;
+}
+.ninja-locker .locker-floor{background:linear-gradient(180deg,#e3ccf4 0 17%,#7c56ab 20% 54%,#4e327d 80%);border-top-color:#dec0ff;border-bottom-color:#362256;}
+.locker-room .locker-fighter.locker-wander{z-index:5;}
+.locker-room .locker-bench{opacity:.35;z-index:1;}
+.locker-wander{height:114px;}
+
+/* v0.17 — choix du combattant repliable. */
+.combat-select-panel{margin-top:12px;}
+.combat-choice-summary{display:flex;align-items:center;gap:12px;background:#f3e9ff;border:2px solid #dfc7fb;border-radius:15px;padding:8px 10px;}
+.combat-choice-summary img{width:68px;height:72px;object-fit:contain;flex:0 0 auto;}
+.combat-choice-summary div{min-width:0;flex:1;}
+.combat-choice-summary strong{font-size:14px;color:#341369;display:block;}
+.combat-choice-summary small{display:block;font-size:11px;color:#6e5b84;margin-top:3px;}
+.combat-choose-button{margin:9px 0 2px;padding:10px;min-height:45px;}
+.combat-select-panel .combat-roster{margin-top:10px;max-height:310px;}
+
+/* v0.17 — l'arène est maintenant visible AVANT la jauge, sans devoir scroller. */
+.combat-live-layout .combat-live-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 6px;color:#3f167a;}
+.combat-live-heading strong{font-size:17px;}
+.combat-live-heading small{font-weight:900;font-size:11px;white-space:nowrap;}
+.combat-live-layout .fight-top{margin:3px 0 8px;gap:6px;}
+.combat-live-layout .combat-unit strong{font-size:12px;}
+.combat-live-layout .combat-unit small{font-size:10px;margin-top:2px;}
+.combat-live-layout .fight-arena{height:clamp(182px,28dvh,238px);box-shadow:0 4px 0 #2c0f56;}
+.combat-live-layout .fight-live{font-size:9px;}
+.combat-live-layout .combat-timing-panel{margin-top:11px;padding:10px 11px;box-shadow:0 2px 0 #d9c2f5;}
+.combat-live-layout .combat-ready h2{font-size:15px;margin-bottom:4px;}
+.combat-live-layout .combat-ready .muted{font-size:11px;margin:4px 0;}
+.combat-live-layout .combat-ready .combat-meter-legend{margin:6px 0;}
+.combat-live-layout .combat-ready-button{margin-top:7px;padding:10px 7px;min-height:48px;}
+.combat-live-layout .combat-gauge-hint{margin:5px 0 6px;font-size:11px;}
+.combat-live-layout .combat-timing-title{font-size:14px;}
+.combat-live-layout .combat-meter{margin:11px 5px 6px 0;height:33px;}
+.combat-live-layout .combat-meter-needle{height:46px;}
+.combat-live-layout .combat-meter-legend{margin:7px 0;font-size:10px;}
+.combat-live-layout .combat-stop-button{margin-top:7px;min-height:49px;padding:9px 6px;font-size:16px;}
+.combat-live-layout .combat-single-pass{margin-top:4px;}
+.combat-live-layout .combat-log{margin:10px 0;font-size:12px;}
+@media(max-width:365px){.combat-live-layout .fight-arena{height:195px}.combat-choice-summary img{width:56px;height:64px;}}
+
+/* Petit écran : éviter que le titre TV passe à la ligne avec un gros solde. */
+@media(max-width:460px){
+  .topbar{gap:4px;padding-left:8px;padding-right:8px}
+  .brand{gap:4px;min-width:0}
+  .brand strong{font-size:clamp(13px,3.9vw,18px);white-space:nowrap;letter-spacing:-.8px}
+  .brand-icon{font-size:20px}
+  .header-tools{gap:2px;flex:0 0 auto}
+  .header-tools .money{font-size:clamp(11px,2.9vw,13px);padding:5px 6px}
+}

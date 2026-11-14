@@ -1,8 +1,8 @@
-/* Baston TV — Prototype 0.16. Aucun framework, ni serveur, ni compte requis. */
+/* Baston TV — Prototype 0.17. Aucun framework, ni serveur, ni compte requis. */
 "use strict";
 
 const SAVE_KEY = "bastontv-save-v03";
-const VERSION_LABEL = "0.16";
+const VERSION_LABEL = "0.17";
 const BASE_TRAINING_COST = 100;
 const TRAINING_INCREASE_EVERY = 3;
 const TRAINING_INCREASE_AMOUNT = 20;
@@ -100,7 +100,7 @@ function freshSave() {
     gymCompanionId: null,
     eggs: [],
     shinyAlbum: {boxe:{},ninja:{}},
-    schemaVersion: 16,
+    schemaVersion: 17,
     devMode: false,
     nextFreeShopEggAt: 0,
     proteins: 0
@@ -144,6 +144,8 @@ if ((game.schemaVersion||0)<16) {
   game.channelLevels={boxe:oldToChannel[game.studioLevel]||1,ninja:1};
   game.schemaVersion=16;
 }
+// v0.17 : évolution d'interface uniquement, aucune transformation de collection.
+if ((game.schemaVersion||0)<17) game.schemaVersion=17;
 if (!game.channelLevels || typeof game.channelLevels!=='object') game.channelLevels={boxe:1,ninja:1};
 for (const family of FAMILY_ORDER) game.channelLevels[family]=Math.max(1,Math.min(CHANNEL_MAX_LEVEL,Math.floor(game.channelLevels[family]||1)));
 if (!game.unlockedFamilies || typeof game.unlockedFamilies!=='object') game.unlockedFamilies={boxe:true,ninja:false};
@@ -181,6 +183,7 @@ let currentView = "home";
 let training = null;
 let latestReward = null;
 let duel = null; // Combat d’animation simple, non sauvegardé
+let combatRosterOpen = false;
 let toastTimeout = null;
 
 // Sons proceduraux : aucun MP3 à installer et aucune requête réseau.
@@ -571,7 +574,8 @@ function gymScreen() {
 }
 function lockerCharacter(fighter,index,onAir=false) {
   const level=fighter.level,family=familyOf(fighter);
-  const x=17+(index%3)*33, floor=22+Math.floor(index/3)*155;
+  // Chaque rangée est posée sur sa propre plateforme (pieds au même niveau).
+  const x=17+(index%3)*33, floor=31+Math.floor(index/3)*155;
   const delay=((index*73)%17)/10,duration=3.2+(index%4)*.45;
   return `<div class="locker-fighter ${onAir?'locker-on-air':'locker-wander'}" data-fighter-id="${fighter.id}" data-fighter-level="${level}" data-fighter-family="${family}" data-fighter-shiny="${fighter.shiny?'true':'false'}" tabindex="0" role="button" aria-label="${fighterName(fighter)} niveau ${level}, glisser sur une recrue du même niveau" style="--lx:${x}%;--floor-bottom:${floor}px;--delay:-${delay}s;--distance:${6+(index%4)*4}px;--duration:${duration}s">
     <div class="locker-character ${fighter.shiny?'is-shiny':''}${family==='boxe'?evolutionClass(level):''}"><img src="${imageFor(level,family)}" draggable="false" alt="">${evolutionDecoration(level,family)}<span class="locker-level">${fighter.shiny?'✨ ':''}Niv. ${level}</span></div>
@@ -583,7 +587,7 @@ function collectionScreen() {
   const ready=equipment.every(item=>inventory[item.id]>0);
   const onAir=strongestFighters(family), assigned=new Set(onAir.map(f=>f.id));
   const others=familyFighters(family).filter(f=>!assigned.has(f.id));
-  const display=others.slice(0,18),rows=Math.max(1,Math.ceil(display.length/3)),rest=others.length-display.length;
+  const display=others.slice(0,30),rows=Math.max(1,Math.ceil(display.length/3)),rest=others.length-display.length;
   const proteinEligible=[...game.fighters].filter(f=>f.level<MAX_FIGHTER_LEVEL).sort(sortFighters);
   return `<span class="kicker">🧤 Les coulisses</span><h1 class="h1">Les vestiaires</h1>
     <p class="muted">Un vestiaire par famille : fusionne deux combattants du même niveau, de la même famille et de la même rareté.</p>
@@ -591,12 +595,12 @@ function collectionScreen() {
     <section class="card locker-panel"><h2>📡 Sur ${info.channel}</h2><p class="subnote">Les vedettes de cette chaîne peuvent également être fusionnées.</p>
       <div class="locker-onair-strip">${onAir.map((f,i)=>lockerCharacter(f,i,true)).join('')}${onAir.length<2?'<span class="locker-air-empty">Emplacement libre</span>':''}</div></section>
     <section class="card locker-panel"><div class="locker-heading"><h2>🏠 Vestiaire ${info.name} (${others.length})</h2><span class="locker-help">☝️ Glisser pour fusionner</span></div>
-      <div class="locker-room ${family==='ninja'?'ninja-locker':''}" id="locker-room" style="--locker-height:${Math.max(305,rows*155+130)}px">
+      <div class="locker-room ${family==='ninja'?'ninja-locker':''}" id="locker-room" style="--locker-height:${Math.max(305,rows*155+95)}px">
         <div class="locker-poster">${info.channel.toUpperCase()} ★ CLUB</div><div class="locker-bench"></div>
-        ${Array.from({length:rows},(_,i)=>`<div class="locker-floor" style="bottom:${15+i*155}px"></div>`).join('')}
+        ${Array.from({length:rows},(_,i)=>`<div class="locker-floor" style="bottom:${12+i*155}px"></div>`).join('')}
         ${display.map((f,i)=>lockerCharacter(f,i)).join('')}
         ${!others.length?'<p class="locker-empty">Toutes tes recrues sont sur le plateau TV !</p>':''}
-      </div>${rest?`<p class="subnote">${rest} autre(s) combattant(s) en réserve.</p>`:''}
+      </div>${rest?`<p class="subnote">${rest} autre(s) combattant(s) en réserve (30 premiers affichés).</p>`:''}
       <p class="subnote">Normal + normal → normal · Shiny + shiny → shiny. Pas de mélange entre les familles.</p></section>
     <section class="card"><h2>🎁 Équipements ${info.name}</h2><div class="eq-grid">${equipment.map(item=>`<div class="eq-item ${inventory[item.id]>0?'ready':''}"><span>${item.icon} ${item.label}</span><b>×${inventory[item.id]}</b></div>`).join('')}</div>
       <button class="action" type="button" data-action="recruit" ${ready?'':'disabled'}>${info.icon} Recruter : ${familyLevels(family)[1].name}</button>
@@ -704,10 +708,10 @@ function eggSlotHtml(egg) {
   const revealed=state==='glowing' || (state==='ready' && egg.shiny);
   const name=state==='stock'?'En attente':state==='incubating'?'Incubation...':state==='glowing'?'✨ SHINY !':'Prêt à ouvrir !';
   const badge=state==='stock'?'📦':revealed?'🌟':state==='ready'?'🎉':'⏳';
-  return `<div class="egg-slot ${revealed?'egg-shiny':''} ${state==='ready'?'egg-ready':''}">
+  return `<div class="egg-slot ${revealed?'egg-shiny':''} ${state==='ready'?'egg-ready':''}" data-egg-slot="${egg.id}" data-egg-state="${state}">
     <div class="egg-visual ${revealed?'egg-glowing':''}" aria-hidden="true">🥚</div>
     <strong>${badge} ${name}</strong>
-    ${state==='incubating'||state==='glowing'?`<small class="egg-countdown">${readableDuration(eggTimeLeft(egg))}</small>`:''}
+    ${state==='incubating'||state==='glowing'?`<small class="egg-countdown" data-egg-countdown="${egg.id}">${readableDuration(eggTimeLeft(egg))}</small>`:''}
     ${state==='stock'?`<label class="egg-family-label">Famille : <select class="egg-family-select" data-egg-choice="${egg.id}">${FAMILY_ORDER.filter(f=>isFamilyUnlocked(f)).map(f=>`<option value="${f}" ${familyOf(egg)===f?'selected':''}>${FAMILY_DATA[f].icon} ${FAMILY_DATA[f].name}</option>`).join('')}</select></label><button class="egg-button" data-action="incubate" data-egg-id="${egg.id}">Incuber</button>`:''}
     ${state==='ready'?`<button class="egg-button" data-action="hatch" data-egg-id="${egg.id}">Ouvrir l'œuf</button>`:''}
     ${state==='incubating'||state==='glowing'?`<button class="egg-button egg-gems-button" data-action="gem-egg" data-egg-id="${egg.id}" ${game.gems<GEM_ACCEL_COST?'disabled':''}>💎 ${GEM_ACCEL_COST} gemmes · −30 min</button>
@@ -722,7 +726,7 @@ function laterScreen() {
     <p class="muted">Ici, tu peux récupérer les œufs gagnés en combat, en acheter avec des gemmes et réclamer un œuf gratuit toutes les 24 heures.</p>
     <section class="card"><h2>🛍️ Boutique</h2>
       <div class="shop-grid">
-        <div class="shop-item"><strong>🎁 Œuf gratuit</strong><small>Réclamable toutes les 24 h</small><b>${freeReady ? 'Disponible !' : readableDuration(freeRemaining)}</b><button class="egg-button" data-action="claim-free-shop-egg" ${freeReady && game.eggs.length < EGG_CAP ? '' : 'disabled'}>${game.eggs.length >= EGG_CAP ? 'Stock plein' : freeReady ? 'Réclamer' : 'Patiente…'}</button></div>
+        <div class="shop-item"><strong>🎁 Œuf gratuit</strong><small>Réclamable toutes les 24 h</small><b id="shop-free-timer">${freeReady ? 'Disponible !' : readableDuration(freeRemaining)}</b><button id="shop-free-claim" class="egg-button" data-action="claim-free-shop-egg" ${freeReady && game.eggs.length < EGG_CAP ? '' : 'disabled'}>${game.eggs.length >= EGG_CAP ? 'Stock plein' : freeReady ? 'Réclamer' : 'Patiente…'}</button></div>
         <div class="shop-item"><strong>🥚 Œuf normal</strong><small>Chance shiny : 30 % à l’incubation</small><b>💎 ${SHOP_NORMAL_EGG_GEMS}</b><button class="egg-button" data-action="buy-egg" data-kind="normal" ${game.gems >= SHOP_NORMAL_EGG_GEMS && game.eggs.length < EGG_CAP ? '' : 'disabled'}>Acheter</button></div>
         <div class="shop-item premium"><strong>✨ Œuf shiny garanti</strong><small>Shiny assuré à l’incubation</small><b>💎 ${SHOP_SHINY_EGG_GEMS}</b><button class="egg-button egg-gems-button" data-action="buy-egg" data-kind="shiny" ${game.gems >= SHOP_SHINY_EGG_GEMS && game.eggs.length < EGG_CAP ? '' : 'disabled'}>Acheter</button></div>
         <div class="shop-item protein-shop"><strong>🥤 Protéine d'évolution</strong><small>Fait monter 1 combattant de 1 niveau, shiny compris.</small><b>💎 ${PROTEIN_PRICE_GEMS}</b><button class="egg-button" data-action="buy-protein" ${game.gems >= PROTEIN_PRICE_GEMS ? '' : 'disabled'}>Acheter</button></div>
@@ -914,47 +918,53 @@ function combatGaugeHtml() {
 function combatScreen() {
   const selected=game.fighters.find(f=>f.id===game.selectedCombatId)||[...game.fighters].sort(sortFighters)[0];
   if (!duel) return `<span class="kicker">🎬 Arène Baston TV</span><h1 class="h1">Combat au timing !</h1>
-    <p class="muted">Sélectionne n'importe quel combattant de ta collection. Les Ninjas sont plus rapides et frappent deux fois, mais encaissent moins bien.</p>
-    <section class="card"><h2>⚔️ Choisir mon combattant</h2>
-      <div class="combat-roster">${[...game.fighters].sort(sortFighters).map(f=>`<button class="combat-roster-entry ${selected?.id===f.id?'is-selected':''}" data-action="select-combat-fighter" data-fighter-id="${f.id}" type="button">
-        <img src="${imageFor(f.level,familyOf(f))}" alt=""><span>${FAMILY_DATA[familyOf(f)].icon} ${fighterName(f)} ${f.shiny?'✨':''}<small>Niv. ${f.level} · ${FIGHT_FAMILIES[familyOf(f)].strikes} frappe(s) / tour</small></span>${selected?.id===f.id?'✓':''}</button>`).join('')}</div></section>
+    <p class="muted">Choisis ton combattant, puis lance le duel. Les Ninjas sont rapides et frappent deux fois, mais sont moins résistants.</p>
+    <section class="card combat-select-panel"><h2>⚔️ Mon combattant</h2>
+      <div class="combat-choice-summary">
+        <img src="${imageFor(selected.level,familyOf(selected))}" alt="">
+        <div><strong>${FAMILY_DATA[familyOf(selected)].icon} ${fighterName(selected)} ${selected.shiny?'✨':''}</strong>
+          <small>Niveau ${selected.level} · ${FIGHT_FAMILIES[familyOf(selected)].strikes} frappe(s) / tour</small></div>
+      </div>
+      <button class="action secondary combat-choose-button" type="button" data-action="toggle-combat-roster" aria-expanded="${combatRosterOpen}" aria-controls="combat-roster-list">${combatRosterOpen?'✕ Fermer la liste':'🧤 Sélectionner le combattant'}</button>
+      ${combatRosterOpen?`<div id="combat-roster-list" class="combat-roster" aria-label="Mes combattants, classés par niveau">${[...game.fighters].sort(sortFighters).map(f=>`<button class="combat-roster-entry ${selected?.id===f.id?'is-selected':''}" data-action="select-combat-fighter" data-fighter-id="${f.id}" type="button">
+        <img src="${imageFor(f.level,familyOf(f))}" alt=""><span>${FAMILY_DATA[familyOf(f)].icon} ${fighterName(f)} ${f.shiny?'✨':''}<small>Niv. ${f.level} · ${FIGHT_FAMILIES[familyOf(f)].strikes} frappe(s) / tour</small></span>${selected?.id===f.id?'✓':''}</button>`).join('')}</div>`:''}</section>
     <div class="fight-arena fight-preview"><div class="ring-glow"></div><div class="ring-floor"></div>
       <div class="fight-actor player-actor ${selected?.shiny?'shiny-actor':''}">${familyVisual(familyOf(selected),selected.level,'player')}</div>
       <div class="fight-actor enemy-actor">${familyVisual('ninja',Math.max(1,selected.level),'enemy')}</div><span class="ring-versus">VS</span></div>
     <button class="action" type="button" data-action="start-duel">⚡ Combattre avec ${fighterName(selected)}</button>
-    ${game.devMode?`<div class="combat-dev-tests"><small>🧪 Tester les styles (sans recruter) :</small><button class="action pink" type="button" data-action="start-duel" data-family="sumo">🥋 Jouer Sumo (test)</button></div>`:''}
-    <div class="tip"><b>Vitesse du curseur : +25 %.</b> Bleu = 175 % des dégâts en attaque, 90 % de parade en défense. Le rouge rate l'action.</div>`;
+    <div class="tip"><b>Jauges encore accélérées de 25 % !</b> Bleu = 175 % des dégâts en attaque, 90 % de parade en défense. Le rouge rate l'action.</div>`;
   const end=Boolean(duel.result);
   const playerFamily=FIGHT_FAMILIES[duel.playerFamily];
   const enemyFamily=FIGHT_FAMILIES[duel.opponent.family];
-  return `<span class="kicker">⚔️ Baston TV · Ring de duel</span><h1 class="h1">${end ? duel.result==='win'?'Victoire ! 🏆':'Défaite ! 💥':'Le choc des familles !'}</h1>
-    <div class="fight-speed-banner"><span>${playerFamily.emoji} ${playerFamily.name} · ⚡ ${duel.playerSpeed}</span><span>${enemyFamily.emoji} ${enemyFamily.name} · ⚡ ${duel.enemySpeed}</span></div>
-    <div class="fight-top">
+  return `<div class="combat-live-layout">
+    <div class="combat-live-heading"><strong>${end ? duel.result==='win'?'🏆 Victoire !':'💥 Défaite !':'⚔️ Duel en direct'}</strong><small>⚡ ${duel.playerSpeed} / ${duel.enemySpeed}</small></div>
+    <div class="fight-top combat-compact-hp">
       <div class="combat-unit"><strong>${duel.playerName}</strong><div class="hpbar"><span id="combat-player-bar" style="width:${100*duel.playerHP/duel.maxPlayerHP}%"></span></div><small id="combat-player-hp">❤️ ${duel.playerHP} / ${duel.maxPlayerHP}</small></div>
       <strong class="versus-label">VS</strong>
       <div class="combat-unit right"><strong>${duel.opponent.name}</strong><div class="hpbar"><span id="combat-enemy-bar" style="width:${100*duel.enemyHP/duel.maxEnemyHP}%"></span></div><small id="combat-enemy-hp">❤️ ${duel.enemyHP} / ${duel.maxEnemyHP}</small></div>
     </div>
-    ${end?'':`<section class="card combat-timing-panel" id="combat-timing-panel">${combatGaugeHtml()}</section>`}
     <div class="fight-arena ${end?'fight-done':''}" id="fight-arena">
       <span class="fight-live">● EN DIRECT</span><div class="ring-glow"></div><div class="ring-floor"></div>
       <div class="fight-actor player-actor ${duel.shiny?'shiny-actor':''}${duel.playerFamily==='boxe'?evolutionClass(duel.level):''} ${end&&duel.result==='lose'?'knocked-out':''}" id="player-actor">${familyVisual(duel.playerFamily,duel.level,'player')}</div>
       <div class="fight-actor enemy-actor ${end&&duel.result==='win'?'knocked-out':''}" id="enemy-actor">${familyVisual(duel.opponent.family,duel.opponent.level,'enemy')}</div>
       ${end?`<div class="fight-end-overlay ${duel.result}"><strong>${duel.result==='win'?'🏆 VICTOIRE !':'💥 DÉFAITE !'}</strong><span>${duel.result==='win'?'+75 pièces TV':'Retente ta chance !'}</span></div>`:''}
     </div>
+    ${end?'':`<section class="card combat-timing-panel" id="combat-timing-panel">${combatGaugeHtml()}</section>`}
     <p class="combat-log" id="combat-log" aria-live="polite">${duel.log}</p>
     ${end?'<button class="action" type="button" data-action="start-duel">🔁 Refaire un combat</button><button class="action secondary" data-action="choose-fighter-again" type="button">🧤 Changer de combattant</button><button class="action secondary" data-action="go-gym" type="button">🥊 Retour à l’entraînement</button>':''}
-    <p class="subnote">${playerFamily.emoji} ${playerFamily.name} : ${playerFamily.strikes} frappe(s) par tour, ${playerFamily.parries} jauge(s) de défense. ${enemyFamily.emoji} ${enemyFamily.name} : ${enemyFamily.strikes} frappe(s), ${enemyFamily.parries} parade(s).</p>`;
+    <p class="subnote">${playerFamily.emoji} ${playerFamily.name} : ${playerFamily.strikes} frappe(s) · ${playerFamily.parries} parade(s). ${enemyFamily.emoji} ${enemyFamily.name} : ${enemyFamily.strikes} frappe(s) · ${enemyFamily.parries} parade(s).</p>
+  </div>`;
 }
-function startDuel(requestedFamily=null) {
+function startDuel() {
   cancelCombatTimers();
   const selected=game.fighters.find(f=>f.id===game.selectedCombatId)||[...game.fighters].sort(sortFighters)[0];
   if(!selected)return;
   const level=selected.level;
-  const family=game.devMode&&requestedFamily==='sumo'?'sumo':familyOf(selected);
+  const family=familyOf(selected);
   const opponent=chooseDuelOpponent(level);
   const p=fighterStats(family,level),e=fighterStats(opponent.family,opponent.level);
   const first=p.speed===e.speed?(Math.random()<.5?'player':'enemy'):(p.speed>e.speed?'player':'enemy');
-  duel={level,shiny:Boolean(selected.shiny),playerFamily:family,playerName:family==='sumo'?'Sumo (test)':fighterName(selected),opponent,
+  duel={level,shiny:Boolean(selected.shiny),playerFamily:family,playerName:fighterName(selected),opponent,
     maxPlayerHP:p.hp,playerHP:p.hp,maxEnemyHP:e.hp,enemyHP:e.hp,
     playerSpeed:p.speed,enemySpeed:e.speed,attacker:first,strikeIndex:1,
     strikeTotal:first==='player'?p.strikes:e.strikes,gauge:null,incoming:null,
@@ -1060,7 +1070,7 @@ function beginCombatGauge(kind,attempt=1) {
   const family=duel.playerFamily;
   const profile=FIGHT_FAMILIES[family];
   const gauge={kind,attempt,totalAttempts:kind==='defense'?profile.parries:1,
-    startedAt:performance.now(),duration:profile.gaugeMs,token:Math.random()};
+    startedAt:performance.now(),duration:Math.round(profile.gaugeMs / 1.25),token:Math.random()};
   duel.phase=kind;duel.gauge=gauge;
   render();
   function tick(){
@@ -1179,7 +1189,7 @@ function settingsScreen() {
       <button type="button" class="action reset-button" data-action="reset-account">Réinitialiser ma progression</button>
       <p class="subnote">Un double contrôle de confirmation évite toute suppression accidentelle.</p>
     </section>
-    <p class="subnote">Version 0.16 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
+    <p class="subnote">Version 0.17 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
 }
 function adjustVolume(name, value) {
   if (!['menus','effects','music'].includes(name)) return;
@@ -1260,6 +1270,7 @@ function changeView(next) {
   }
   if(duel?.result && (next!=='combat'||currentView==='combat')){cancelCombatTimers();duel=null;}
   clearLockerSelection();
+  combatRosterOpen=false;
   currentView = next;
   render();
   window.scrollTo({top:0,behavior:"instant"});
@@ -1292,7 +1303,7 @@ function selectFamily(screen,family) {
 function selectCombatFighter(id) {
   if(duel)return;
   const f=fighterById(id);if(!f)return;
-  game.selectedCombatId=id;save();render();
+  game.selectedCombatId=id;combatRosterOpen=false;save();render();
 }
 
 function startTraining() {
@@ -1483,8 +1494,8 @@ document.addEventListener("click", event => {
   switch(target.dataset.action) {
     case "go-gym": changeView("gym"); break;
     case "go-combat": changeView("combat"); break;
-    case "start-duel": startDuel(target.dataset.family || null); break;
-    case "choose-fighter-again": if(duel?.result){cancelCombatTimers();duel=null;render();} break;
+    case "start-duel": startDuel(); break;
+    case "choose-fighter-again": if(duel?.result){cancelCombatTimers();duel=null;combatRosterOpen=false;render();} break;
     case "combat-tap": tapCombatGauge(); break;
     case "combat-ready": activateCombatGauge(); break;
     case "upgrade": upgrade(); break;
@@ -1492,6 +1503,7 @@ document.addEventListener("click", event => {
     case "select-channel": selectFamily('home',target.dataset.family); break;
     case "select-gym-family": selectFamily('gym',target.dataset.family); break;
     case "select-locker-family": selectFamily('collection',target.dataset.family); break;
+    case "toggle-combat-roster": if(!duel){combatRosterOpen=!combatRosterOpen;render();} break;
     case "select-combat-fighter": selectCombatFighter(target.dataset.fighterId); break;
     case "start-training": startTraining(); break;
     case "choose-companion": chooseGymCompanion(target.dataset.fighterId); break;
@@ -1581,7 +1593,30 @@ setInterval(() => {
 setInterval(save, 4_000);
 setInterval(animateStudioTV, 3350);
 setInterval(()=>{if(!document.hidden && currentView==='home')tickAudience();},3200);
-setInterval(()=>{if(!document.hidden && currentView==='later' && (game.eggs.some(e=>e.startedAt) || freeShopEggRemaining()>0)) render();},1000);
+function updateEggClocks() {
+  if(document.hidden || currentView!=='later') return;
+  const remaining=freeShopEggRemaining();
+  const freeTimer=document.getElementById('shop-free-timer');
+  const freeButton=document.getElementById('shop-free-claim');
+  if(freeTimer) freeTimer.textContent=remaining?readableDuration(remaining):'Disponible !';
+  if(freeButton) {
+    const full=game.eggs.length>=EGG_CAP;
+    freeButton.disabled=remaining>0 || full;
+    freeButton.textContent=full?'Stock plein':remaining?'Patiente…':'Réclamer';
+  }
+  let stateChanged=false;
+  for (const egg of game.eggs) {
+    if (!egg.startedAt) continue;
+    const countdown=document.querySelector(`[data-egg-countdown="${egg.id}"]`);
+    if(countdown) countdown.textContent=readableDuration(eggTimeLeft(egg));
+    const slot=document.querySelector(`[data-egg-slot="${egg.id}"]`);
+    if(slot && slot.dataset.eggState!==eggState(egg)) stateChanged=true;
+  }
+  // Une transition d'incubation change les boutons, mais une liste ouverte
+  // ne doit jamais être détruite sous le doigt de l'utilisateur.
+  if(stateChanged && !document.activeElement?.matches('.egg-family-select')) render();
+}
+setInterval(updateEggClocks,1000);
 let combatHiddenAt = 0;
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden){

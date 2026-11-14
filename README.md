@@ -1,24 +1,23 @@
-# Baston TV — Prototype v0.16
+# Baston TV — PWA v0.17
 
-Deux familles recrutables : Bourrins et Ninjas. Sauvegarde locale rétrocompatible avec la v0.15 (`bastontv-save-v03`).
+Prototype de jeu mobile et ordinateur (HTML, CSS et JavaScript, sans serveur de sauvegarde). **La sauvegarde reste `bastontv-save-v03`**, donc les personnages, pièces, gemmes, chaînes, œufs et autres ressources de la v0.16 sont conservés lors de la mise à jour.
 
-## Nouveautés
+## Corrections de cette version
 
-- Déblocage du dojo Ninja (2 000 pièces) avec un Bébé Ninja offert à l’ouverture.
-- Chaînes **Boxe TV** et **Ninja TV**, chacune avec ses deux combattants en direct et **10 niveaux d’amélioration** (+100 % maximum par chaîne).
-- Migration des anciens niveaux du studio vers Boxe TV, en préservant le bonus acquis : niv. 1→1, 2→3, 3→5, 4→7, 5→10.
-- Vestiaires séparés, équipements propres aux deux familles et entraînement ciblé. Entraînement Ninja 35 % plus cher.
-- 6 illustrations Ninja ; fusions et protéines indépendantes des familles.
-- Choix du combattant depuis la collection triée par niveau décroissant sur l’écran Combat.
-- Ninja jouable réellement avec ses deux frappes et sa vitesse élevée ; Sumo toujours adversaire (style provisoire).
-- Vitesse des jauges de combat +25 % (durée divisée par 1,25).
-- Choix de famille pour les œufs au lancement de l’incubation (famille débloquée uniquement).
-- Les revenus TV des différentes chaînes s’ajoutent, et les shinies découverts donnent un bonus global.
+- Vestiaires : vrais planchers / plateformes pour chaque rangée de combattants, y compris lorsque plusieurs Ninjas se trouvent hors antenne. Jusqu'à 30 personnages visibles dans le vestiaire de chaque famille (les deux vedettes sont affichées séparément).
+- Boutique / œufs : correction du menu de famille sur Android. Le jeu n'efface plus et ne reconstruit plus toute la boutique chaque seconde ; les compteurs de l'incubateur et de l'œuf gratuit sont mis à jour directement.
+- Combats : sélection du combattant masquée par défaut derrière un bouton. Une fois le combattant choisi, la liste se referme automatiquement. Le classement des choix reste du niveau le plus élevé au plus bas.
+- Combats : jauge **25 % plus rapide par rapport à la v0.16** (durée précédente divisée par 1,25 pour chaque famille).
+- Combats : arène placée **avant la jauge**, barre de vie et vitesse compactes, disposition adaptée aux écrans de téléphone.
+- Suppression du bouton développeur **« Jouer Sumo (test) »**. Les Sumos peuvent toujours être des adversaires.
+- En-tête légèrement plus compact sur les petits écrans et cache PWA mis à jour (`baston-tv-v017`).
 
-## Installer sur GitHub Pages
+## Mettre le jeu sur GitHub Pages
 
-Décompresser le ZIP GitHub Pages, puis charger **tous les fichiers qu'il contient** à la racine de `Drajibus84/baston-tv`, y compris `assets/ninja-1.png` à `ninja-6.png` et les images de boxe. Conserver l’arborescence et valider **Commit changes**. Attendre le déploiement GitHub Actions, puis relancer l’app PWA.
+Pour la version GitHub Pages, décompresser `BastonTV_GitHubPages_v0.17.zip`, ouvrir le dossier décompressé puis **téléverser son contenu** (pas seulement le dossier parent) à la racine du dépôt GitHub `Drajibus84/baston-tv`. Il faut notamment `index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest` et **le dossier `assets` avec les images Bourrins et Ninjas**.
 
-## Notes
+Après **Commit changes**, attendre la fin du déploiement dans l'onglet *Actions*. Ouvrir le jeu dans le navigateur, puis fermer complètement et rouvrir la PWA installée. Il faut parfois la rouvrir deux fois pour recevoir une mise à jour du service worker. **Ne pas désinstaller l'application ni effacer les données du site** pour forcer une mise à jour : cela pourrait supprimer la sauvegarde locale.
 
-Les fichiers `index.html`, `styles.css`, `app.js`, `manifest.webmanifest` et `sw.js` doivent rester au même niveau. Les prix et statistiques sont provisoires et peuvent être équilibrés après les tests sur téléphone. Les données sont stockées localement, pas synchronisées entre appareils. N’efface pas les données du site pour mettre à jour.
+## Tester sur ordinateur
+
+Décompresser `BastonTV_PWA_v0.17.zip` puis lancer `index.html` via Live Server (VS Code), ou servir le dossier sur un serveur local. Les fonctionnalités PWA complètes nécessitent HTTPS ou `localhost`.
