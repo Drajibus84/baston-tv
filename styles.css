@@ -65,3 +65,138 @@
 .bag-arena{cursor:crosshair}
 .fight-actor img,.gym-boxer{filter:drop-shadow(0 8px 3px #120a3235)}
 .fight-actor.jabbing img,.fight-actor.uppercut img,.enemy-actor.jabbing img,.taking-hit img,.gym-boxer.gym-punch{will-change:transform}
+
+/* v0.4 — audio activable, QTE plus lisibles et impacts cartoon. */
+.header-tools{display:flex;align-items:center;gap:7px}
+.sound-toggle{border:2px solid #a970ff;border-radius:14px;background:#2b115d;color:#fff;padding:7px 9px;min-width:41px;min-height:39px;font-size:19px;line-height:1}
+.sound-toggle:active{transform:scale(.94)}
+.train-stat{font-size:12px;gap:4px;flex-wrap:wrap}
+.gym-status{position:absolute;z-index:4;top:8px;left:50%;transform:translateX(-50%);font-size:12px;font-weight:1000;white-space:nowrap;color:#b62a54;background:#fffefaeb;border:2px solid #fff;border-radius:30px;padding:5px 9px;pointer-events:none}
+.gym-status.positive{color:#127e50}
+.bounce-label{animation:bounce-label .25s ease-out both}
+@keyframes bounce-label{from{transform:translateX(-50%) scale(.8)}to{transform:translateX(-50%) scale(1)}}
+.marker{font-size:27px;text-shadow:1px 2px 0 #fff,0 0 8px #fff}
+.spot::before{content:"";position:absolute;inset:-7px;border:3px solid #ffe677;border-radius:100%;animation:spot-timer .98s linear forwards;pointer-events:none}
+@keyframes spot-timer{from{opacity:1;transform:scale(1.06)}to{opacity:.02;transform:scale(.45)}}
+.impact-fx{position:absolute;z-index:10;transform:translate(-50%,-50%);font-weight:1000;font-size:25px;color:#ffe95d;line-height:1;white-space:nowrap;-webkit-text-stroke:1.5px #77265a;text-shadow:2px 3px #311356;pointer-events:none;animation:impact-splash .52s ease-out forwards}
+.impact-fx.impact-heavy{font-size:35px;color:#ffbb40}
+@keyframes impact-splash{0%{opacity:0;transform:translate(-50%,-50%) scale(.25) rotate(-28deg)}22%{opacity:1;transform:translate(-50%,-50%) scale(1.3) rotate(-8deg)}65%{opacity:1;transform:translate(-50%,-70%) scale(1)}100%{opacity:0;transform:translate(-50%,-110%) scale(1.1)}}
+.fight-arena.arena-shake{animation:arena-pulse .22s ease-in-out}
+.bag-arena.arena-shake{animation:arena-pulse .18s ease-in-out}
+@keyframes arena-pulse{0%,100%{filter:brightness(1);transform:translateX(0)}35%{filter:brightness(1.16);transform:translateX(-3px)}70%{transform:translateX(3px)}}
+.fight-actor.knocked-out{animation:knocked-out-player .75s ease-out both !important}
+.enemy-actor.knocked-out{animation:knocked-out-enemy .75s ease-out both !important}
+@keyframes knocked-out-player{to{transform:translate(-14px,30px) rotate(-76deg);opacity:.84}}
+@keyframes knocked-out-enemy{to{transform:scaleX(-1) translate(-14px,30px) rotate(-76deg);opacity:.84}}
+@media(prefers-reduced-motion:reduce){.impact-fx,.arena-shake,.knocked-out,.bounce-label,.spot::before{animation:none!important}}
+@media(max-width:360px){.sound-toggle{padding:6px;min-width:36px}.money{font-size:13px;padding:7px 8px}.brand strong{font-size:19px}}
+
+
+/* v0.7 — Audience live, vestiaires animés, fusion par glisser-déposer, K.O. grand format */
+.viewers-live{position:absolute;right:9px;top:9px;z-index:5;background:#271058dd;border:1px solid #f8d8ff80;color:white;display:flex;align-items:center;gap:5px;border-radius:13px;padding:6px 8px;font-size:12px;font-weight:800;box-shadow:0 2px 4px #18072c66}
+.viewers-live b{font-size:13px;font-variant-numeric:tabular-nums}.viewers-change{font-size:10px;font-weight:900}.viewers-change.up{color:#aaf3c2}.viewers-change.down{color:#ffb1bd}
+.locker-panel{overflow:hidden}.locker-heading{display:flex;align-items:center;justify-content:space-between;gap:7px;flex-wrap:wrap}.locker-heading h2{margin-bottom:4px}.locker-help{font-size:10px;color:#7c4e9c;font-weight:800}
+.locker-onair-strip{display:flex;gap:10px;justify-content:center;padding:9px;background:linear-gradient(145deg,#8e5bd3,#432090);border:2px solid #56318f;border-radius:16px;min-height:140px}
+.locker-on-air{position:relative;left:auto;top:auto;background:#fff7;border-radius:12px;border:2px solid #fad65f;flex:0 1 128px;max-width:140px;padding:5px;min-height:128px}.locker-air-empty{display:grid;place-items:center;flex:1;border:2px dashed #fff7;color:white;font-size:12px;border-radius:12px}
+.locker-room{height:var(--locker-height,290px);position:relative;overflow:hidden;border:3px solid #60309c;border-radius:17px;background:linear-gradient(180deg,#b7a1dc 0%,#d3c4f1 47%,#d7b78a 48%,#f7d4a2 100%);margin-top:12px;isolation:isolate}
+.locker-room::before{content:"";position:absolute;inset:0 0 52%;background:repeating-linear-gradient(90deg,transparent 0 62px,#7b61ad24 62px 67px);pointer-events:none}
+.locker-room::after{content:"";position:absolute;left:0;right:0;bottom:0;height:20%;background:repeating-linear-gradient(90deg,#d8ab70a3 0 68px,#edc18bba 68px 73px);pointer-events:none;z-index:0}
+.locker-poster{position:absolute;left:14px;top:10px;background:#5a299c;color:#fff4ab;transform:rotate(-4deg);border:3px solid #f4d15a;border-radius:10px;padding:7px;font-size:11px;font-weight:1000}
+.locker-bench{position:absolute;right:20px;bottom:25%;width:38%;height:19px;background:#9d533d;border:3px solid #57263a;border-radius:6px;box-shadow:0 13px 0 -2px #774154;opacity:.8}
+.locker-fighter{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;display:flex;align-items:center;flex-direction:column;justify-content:flex-end;isolation:isolate;z-index:3;position:relative;outline:0;color:#371657}
+.locker-fighter:focus-visible{outline:3px solid #ffe65a;outline-offset:2px}
+.locker-wander{position:absolute;left:var(--lx);top:var(--ly);width:74px;height:114px;transform:translate(-50%,-40%);animation:locker-walk var(--duration,3.3s) ease-in-out infinite alternate;animation-delay:var(--delay)}
+.locker-character{width:100%;height:90px;position:relative;display:flex;justify-content:center;align-items:end;pointer-events:none}
+.locker-character img{max-width:100%;height:100%;object-fit:contain;object-position:bottom;pointer-events:none;filter:drop-shadow(0 4px 1px #2c164f5b)}
+.locker-level{position:absolute;top:4px;right:-5px;padding:2px 4px;font-size:9px;font-weight:1000;background:#ffdb49;color:#4e2466;border:1px solid #7934ad;border-radius:8px}
+.locker-name{background:#f9f2ffed;font-size:10px;font-weight:900;border-radius:9px;padding:2px 6px;text-align:center;white-space:nowrap;pointer-events:none}
+.locker-room .locker-fighter:nth-child(odd){animation-direction:alternate-reverse}
+@keyframes locker-walk{0%{transform:translate(calc(-50% - var(--distance)), -40%) scale(.96)}100%{transform:translate(calc(-50% + var(--distance)), -43%) scale(1.045)}}
+.locker-on-air .locker-character{height:90px}.locker-on-air .locker-name{color:white;background:#451a86}.locker-on-air{cursor:grab}
+.locker-empty{position:absolute;inset:auto 17px 12px;background:#fff7;border-radius:10px;font-weight:800;text-align:center;color:#623b79;padding:12px;font-size:12px;z-index:2}
+.locker-fighter.drag-source{opacity:.35;animation-play-state:paused}
+.locker-fighter.drop-ok .locker-character,.locker-fighter.selected-for-fusion .locker-character{outline:3px dashed #35d77c;outline-offset:1px;border-radius:13px;background:#a6f2af50}
+.locker-fighter.drop-no .locker-character{outline:3px solid #ff637b;border-radius:12px}
+.locker-drag-ghost{position:fixed!important;z-index:1000!important;pointer-events:none!important;margin:0!important;transform:none!important;animation:none!important;filter:drop-shadow(0 5px 7px #310e6677) brightness(1.14);opacity:.96;touch-action:none}
+.locker-room.fusion-flash{animation:locker-fuse-flash .65s ease-out}
+@keyframes locker-fuse-flash{0%,100%{filter:brightness(1)}35%{filter:brightness(1.9) saturate(1.3)}60%{filter:brightness(1.2)}}
+.fight-end-overlay{position:absolute;z-index:20;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:#34146ab8;text-align:center;animation:fade-in-fight .3s ease-out both}
+.fight-end-overlay strong{font-weight:1000;font-size:clamp(37px,10vw,67px);line-height:.95;letter-spacing:-1px;color:#ffdf3d;-webkit-text-stroke:1.2px #582183;text-shadow:3px 5px #1c0939,0 0 22px #ffd93f80;transform:rotate(-4deg);max-width:100%;overflow-wrap:anywhere}
+.fight-end-overlay span{font-size:19px;font-weight:1000;color:white;background:#6528aaed;padding:8px 13px;border-radius:10px}
+.fight-end-overlay.lose strong{color:#ff879e;text-shadow:3px 5px #1c0939,0 0 18px #ff597d99}
+@keyframes fade-in-fight{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.locker-wander,.locker-room.fusion-flash,.fight-end-overlay{animation:none!important}}
+@media(max-width:365px){.locker-wander{width:62px;height:106px}.locker-on-air{max-width:125px}.locker-on-air .locker-character{height:78px}.viewers-live{top:38px;right:8px}}
+
+
+/* Baston TV 0.8 : pieds au sol, shinies, incubateur */
+.locker-wander{top:auto!important;bottom:var(--floor-bottom,22px);height:120px;transform:translateX(-50%);animation:locker-walk-floor var(--duration,3.3s) ease-in-out infinite alternate;animation-delay:var(--delay)}
+@keyframes locker-walk-floor{0%{transform:translateX(calc(-50% - var(--distance))) scale(.97)}100%{transform:translateX(calc(-50% + var(--distance))) scale(1.025)}}
+.locker-room{background:linear-gradient(180deg,#b7a1dc 0%,#d3c4f1 50%,#ead3ae 50%,#edc994 100%)}
+.locker-floor{position:absolute;left:0;right:0;height:11px;background:linear-gradient(#ac6d43,#6f385c);border-top:3px solid #fbe1aa;z-index:1;pointer-events:none;opacity:.72}
+.locker-room .locker-fighter{z-index:4}.locker-room .locker-bench{z-index:2}
+.is-shiny:before,.shiny-fighter:before,.shiny-actor:before{content:"";position:absolute;inset:3% -7%;z-index:0;pointer-events:none;background:radial-gradient(ellipse, #fce86ac4 6%, #ffb83670 37%, #ff6a6f25 62%, transparent 75%);filter:blur(7px);animation:shiny-pulse 1.8s ease-in-out infinite alternate}
+.is-shiny,.shiny-fighter,.shiny-actor{position:relative;isolation:isolate}
+.is-shiny img,.shiny-fighter img,.shiny-actor img{position:relative;z-index:1;filter:drop-shadow(0 0 8px #ffd44b) drop-shadow(0 0 3px #fbd256)!important}
+.shiny-fighter{border-color:#ffdb3b;box-shadow:0 0 14px #ffdd59b0}
+.is-shiny .locker-level{background:#ffe65d}
+@keyframes shiny-pulse{from{opacity:.55;transform:scale(.96)}to{opacity:1;transform:scale(1.08)}}
+.tv-shiny-caption{font-size:12px;color:#793ca5;background:#f2e7ff;padding:10px 12px;border-radius:12px;margin-top:14px;font-weight:750}
+.egg-header{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px;padding:9px 0}
+.egg-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
+.egg-slot{border:2px solid #ccb3ed;border-radius:16px;min-height:172px;background:linear-gradient(#f7edff,#ede0ff);display:flex;align-items:center;justify-content:center;flex-direction:column;padding:9px 5px;gap:7px;text-align:center;min-width:0}
+.egg-slot strong{font-size:12px;line-height:1.12;color:#542185}.egg-slot small{font-size:10px;color:#73558f;font-weight:750}
+.egg-visual{font-size:48px;line-height:1.15;filter:drop-shadow(0 4px 4px #8448ab4a)}
+.egg-glowing{filter:drop-shadow(0 0 13px #ffdf4b) drop-shadow(0 0 8px #ff8c38);animation:shiny-pulse 1.6s ease-in-out infinite alternate}
+.egg-shiny{border-color:#f3c54c;background:linear-gradient(#fff8d9,#f3e1ff)}
+.egg-ready{border-color:#76c995}
+.egg-empty{border-style:dashed;opacity:.65}.egg-empty>span{font-size:28px;color:#9767bb}
+.egg-button,.egg-test-button{font:inherit;border:0;border-radius:9px;padding:7px 8px;width:100%;font-size:11px;font-weight:900;background:#7024bc;color:#fff;cursor:pointer}
+.egg-button:disabled{opacity:.6;cursor:not-allowed}.egg-test-button{font-size:10px;padding:6px 3px;background:#efe0ff;color:#6c2794;border:1px solid #d4b6ea}
+.shiny-album{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 12px}.album-entry{border-radius:12px;border:2px solid #dac9ec;background:#f0e8f8;text-align:center;padding:12px 3px;display:flex;flex-direction:column;gap:4px;align-items:center;font-size:24px;opacity:.72}.album-entry small{font-size:10px;font-weight:800;color:#67498b}.album-entry.unlocked{background:#fff3c5;border-color:#ffc840;opacity:1;box-shadow:0 0 12px #ffcb5970}
+@media(max-width:360px){.egg-visual{font-size:38px}.egg-slot{padding:6px 3px}.egg-test-button{font-size:9px}}
+@media(prefers-reduced-motion:reduce){.shiny-fighter:before,.shiny-actor:before,.is-shiny:before,.egg-glowing,.locker-wander{animation:none!important}}
+
+/* v0.9 : choix du boxeur accompagnateur + gemmes */
+.gym-choice-panel{margin-top:14px;}
+.gym-roster{display:flex;gap:10px;overflow-x:auto;padding:5px 2px 13px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;}
+.gym-roster-fighter{position:relative;isolation:isolate;flex:0 0 106px;min-height:146px;background:#f5edff;border:2px solid #d4b4f3;border-radius:14px;padding:8px 5px;color:#4b2277;scroll-snap-align:start;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;transition:transform .12s,border-color .12s;}
+.gym-roster-fighter:active{transform:scale(.97)}
+.gym-roster-fighter.is-selected{border:3px solid #50ca86;background:linear-gradient(#f8fff9,#f4e4ff);box-shadow:0 3px 0 #20945f;}
+.gym-roster-fighter img{position:relative;z-index:1;height:86px;max-width:94px;width:100%;object-fit:contain;object-position:bottom;pointer-events:none;}
+.gym-roster-fighter strong,.gym-roster-fighter small,.gym-roster-check{position:relative;z-index:2;}
+.gym-roster-fighter strong{font-size:11px;line-height:1.1;white-space:nowrap;}
+.gym-roster-fighter small{font-size:10px;color:#78549c}
+.gym-roster-check{font-size:10px;font-weight:900;color:#216d46;min-height:14px;}
+.gym-companion-actor{position:absolute;left:-7px;bottom:4px;width:34%;max-width:142px;height:222px;z-index:2;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;isolation:isolate;}
+.gym-companion-actor .gym-boxer{position:relative;left:auto;bottom:auto;width:100%;max-width:100%;max-height:100%;height:100%;object-fit:contain;object-position:bottom;z-index:2;pointer-events:none;}
+.gym-companion-actor.shiny-actor:before{inset:8% -10%;z-index:0;}
+.gym-companion-actor.shiny-actor img{filter:drop-shadow(0 0 9px #ffe75b) drop-shadow(0 6px 1px #35165e70)!important;}
+.gem-caption{background:#f3eaff;border:1px solid #cfb2fa;border-radius:12px;padding:10px 12px;font-size:13px;color:#5d3587;margin:8px 0;}
+.egg-gems-button{background:linear-gradient(130deg,#934ae2,#6d3db4);margin-top:1px;}
+.egg-gems-button:disabled{opacity:.48;cursor:not-allowed;}
+.header-tools{gap:5px;}
+.gem-balance{padding:7px 8px;border-color:#c87efa;}
+@media(max-width:390px){.brand strong{font-size:17px}.brand-icon{font-size:24px}.money{font-size:12px;padding:6px 7px}.gem-balance{font-size:12px;padding:6px 7px}.sound-toggle{min-width:34px;padding:6px}}
+@media(prefers-reduced-motion:reduce){.gym-roster-fighter{transition:none}}
+
+
+/* v0.10 — combat : éviter que .shiny-actor (position:relative dans la v0.9)
+   remplace le positionnement absolute du combattant dans le ring. */
+.fight-arena .fight-actor.shiny-actor{position:absolute;bottom:15%;height:78%;width:48%;}
+.fight-preview .fight-actor.shiny-actor{width:47%;}
+.fight-arena .fight-actor.shiny-actor img{object-fit:contain;object-position:center bottom;max-height:100%;}
+/* Le texte des dégâts est maintenant ajouté à l'arène, non au sprite retourné. */
+.fight-arena>.floating-damage{position:absolute;z-index:15;transform-origin:center;white-space:nowrap;direction:ltr;}
+/* Installer la PWA : disponible depuis l'accueil. */
+.install-panel{margin-top:14px;padding:15px;border-radius:18px;background:linear-gradient(120deg,#f8edff,#fff4d2);border:2px solid #caa4f4;box-shadow:0 4px 0 #d0b4ed;}
+.install-panel h2{font-size:18px;margin:0 0 5px;}
+.install-panel .action{margin-top:7px;}
+.install-panel p{margin:5px 0;font-size:12px;color:#674c85;line-height:1.45;}
+.install-dialog{max-width:min(92vw,430px);width:100%;border:3px solid #6b2fb9;border-radius:20px;padding:18px;background:#fffaff;color:#38145d;box-shadow:0 0 0 120vmax #260b4c66;}
+.install-dialog::backdrop{background:#260b4c91;}
+.install-dialog h2{margin:0 0 10px;font-size:21px;}
+.install-dialog p{font-size:14px;line-height:1.55;}
+.install-dialog ul{padding-left:22px;font-size:14px;line-height:1.55;}
+.install-close{display:block;width:100%;margin-top:14px;padding:12px 18px;border:0;border-radius:12px;color:white;font-weight:900;background:#7836c2;}
+@media(max-width:365px){.install-panel{padding:12px}}

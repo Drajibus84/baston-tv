@@ -1,4 +1,4 @@
-/* Baston TV — Prototype 0.3. Aucun framework, ni serveur, ni compte requis. */
+/* Baston TV — Prototype 0.10. Aucun framework, ni serveur, ni compte requis. */
 "use strict";
 
 const SAVE_KEY = "bastontv-save-v03";
@@ -9,6 +9,15 @@ const MISS_PENALTY_MS = 700;
 const WRONG_CLICK_PENALTY_MS = 500;
 const MIN_SPOT_DISTANCE = 28;
 const OFFLINE_CAP_MS = 8 * 60 * 60 * 1_000;
+// Œufs : normal 30 min, shiny révélé après 30 min puis prêt après 2 h.
+const EGG_NORMAL_MS = 30 * 60_000;
+const EGG_SHINY_MS = 120 * 60_000;
+const EGG_CAP = 3;
+const SHINY_RATE = 0.30;
+const GEM_START = 10;
+const GEM_ACCEL_COST = 5;
+const GEM_ACCEL_MS = 30 * 60_000;
+const WINS_PER_EGG = 3;
 const LEVELS = [null,
   { name: "Le Paumé", income: 5 },
   { name: "Le Balourd", income: 12 },
@@ -33,27 +42,221 @@ function freshSave() {
     lastTick: now(),
     equipment: Object.fromEntries(EQUIPMENT.map(x => [x.id, 0])),
     fighters: [{ id: getNewId(), level: 1 }],
-    sessions: 0
+    sessions: 0,
+    gems: GEM_START,
+    combatWins: 0,
+    pendingCombatEggs: 0,
+    gymCompanionId: null
   };
 }
 function loadSave() {
   try {
-    const value = JSON.parse(localStorage.getItem(SAVE_KEY));
+    const value = JSON.parse(localStorage.getItem(SAVE_KEY) || localStorage.getItem("bastontv-save-v01"));
     if (value && typeof value.coins === "number" && Array.isArray(value.fighters) && value.equipment && value.studioLevel) return value;
   } catch (_) { /* stockage désactivé ou ancienne sauvegarde invalide */ }
   return freshSave();
 }
 let game = loadSave();
+// Migration douce depuis v0.7 : on ne touche ni aux pièces ni aux personnages.
+game.fighters.forEach(f => { f.shiny = Boolean(f.shiny); });
+if (!Array.isArray(game.eggs)) game.eggs = [];
+if (typeof game.lastDailyEgg !== 'string') game.lastDailyEgg = '';
+if (!Number.isFinite(game.gems) || game.gems < 0) game.gems = GEM_START;
+if (!Number.isFinite(game.combatWins) || game.combatWins < 0) game.combatWins = 0;
+if (!Number.isFinite(game.pendingCombatEggs) || game.pendingCombatEggs < 0) game.pendingCombatEggs = 0;
+if (typeof game.gymCompanionId !== 'string') game.gymCompanionId = null;
+if (!game.shinyAlbum || typeof game.shinyAlbum !== 'object') game.shinyAlbum = {};
+for (const f of game.fighters) if (f.shiny) game.shinyAlbum[f.level] = true;
 let currentView = "home";
 let training = null;
 let latestReward = null;
 let duel = null; // Combat d’animation simple, non sauvegardé
 let toastTimeout = null;
 
+// Sons proceduraux : aucun MP3 à installer et aucune requête réseau.
+// Le navigateur autorise les sons après une interaction de l'utilisateur.
+const SOUND_KEY = "bastontv-sound-enabled";
+let soundEnabled = (() => { try { return localStorage.getItem(SOUND_KEY) !== "false"; } catch (_) { return true; } })();
+let audioCtx = null;
+let noiseBuffer = null;
+
+// Sons d'impact courts enregistrés en fichiers audio (synthèse percussive).
+// Plus de petites mélodies électroniques pour simuler les coups : on utilise
+// un claquement aigu et un bruit sourd très court, légèrement différents.
+const SOUND_FILES = {
+  ui: './assets/audio/clic.wav',
+  confirm: './assets/audio/confirmation.wav',
+  bag: './assets/audio/sac-frappe.wav',
+  jab: './assets/audio/coup-rapide.wav',
+  uppercut: './assets/audio/uppercut.wav',
+  enemy: './assets/audio/riposte.wav'
+};
+const SAMPLE_VOLUMES = {ui:.20, confirm:.28, bag:.62, jab:.68, uppercut:.74, enemy:.58};
+const soundPool = new Map();
+for (const [kind, file] of Object.entries(SOUND_FILES)) {
+  const clips = Array.from({length:3}, () => {
+    const a = new Audio(file);
+    a.preload = 'auto';
+    return a;
+  });
+  soundPool.set(kind,{clips,next:0});
+}
+function playSample(kind) {
+  if (!soundEnabled || document.hidden) return true;
+  const pool = soundPool.get(kind);
+  if (!pool) return false;
+  const clip = pool.clips[pool.next++ % pool.clips.length];
+  try {
+    clip.pause();
+    clip.currentTime = 0;
+    clip.volume = SAMPLE_VOLUMES[kind] ?? .5;
+    const played = clip.play();
+    if (played && played.catch) played.catch(() => {});
+  } catch (_) { /* Son non pris en charge : le jeu continue sans audio. */ }
+  return true;
+}
+
+// Ambiance de foule volontairement désactivée : le son synthétique précédent
+// faisait trop "horreur". Dès que tu fourniras foule.mp3, on pourra l'ajouter.
+function unlockSounds() {
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+}
+function syncCrowdAudio() { /* Pas d'ambiance tant qu'un vrai son de tribune n'a pas été choisi. */ }
+function stopCrowdNow() { /* Pas de lecture en cours. */ }
+
+function getAudioContext() {
+  if (!soundEnabled) return null;
+  const AudioApi = window.AudioContext || window.webkitAudioContext;
+  if (!AudioApi) return null;
+  try {
+    if (!audioCtx) {
+      audioCtx = new AudioApi();
+      // Petit bruit synthétique à bande large pour les impacts de gant.
+      noiseBuffer = audioCtx.createBuffer(1, Math.ceil(audioCtx.sampleRate * .24), audioCtx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    }
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    return audioCtx;
+  } catch (_) { return null; }
+}
+function soundTone(ctx, t, a, b, duration, level, wave="triangle") {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = wave;
+  osc.frequency.setValueAtTime(Math.max(a, 1), t);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(b, 1), t + duration);
+  gain.gain.setValueAtTime(.0001, t);
+  gain.gain.exponentialRampToValueAtTime(Math.max(.001, level), t + .009);
+  gain.gain.exponentialRampToValueAtTime(.0001, t + duration);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t); osc.stop(t + duration + .012);
+}
+function soundNoise(ctx, t, duration, level, cutoff) {
+  if (!noiseBuffer) return;
+  const src = ctx.createBufferSource(); src.buffer=noiseBuffer;
+  const filter = ctx.createBiquadFilter(); filter.type="lowpass"; filter.frequency.value=cutoff;
+  const gain=ctx.createGain();
+  gain.gain.setValueAtTime(Math.max(.001,level), t);
+  gain.gain.exponentialRampToValueAtTime(.0001, t+duration);
+  src.connect(filter).connect(gain).connect(ctx.destination);
+  src.start(t); src.stop(t+duration);
+}
+function playSound(kind) {
+  if (!soundEnabled) return;
+  if (playSample(kind)) return;
+  const ctx = getAudioContext(); if (!ctx) return;
+  const t=ctx.currentTime + .01;
+  if (kind === "bag") {
+    soundNoise(ctx,t,.12,.16,950);
+    soundTone(ctx,t,145,65,.14,.17);
+    soundTone(ctx,t+.025,320,110,.07,.025);
+  } else if (kind === "jab") {
+    soundNoise(ctx,t,.09,.12,1150);
+    soundTone(ctx,t,195,85,.10,.16);
+  } else if (kind === "uppercut") {
+    soundNoise(ctx,t,.19,.21,800);
+    soundTone(ctx,t,125,42,.22,.23,"sawtooth");
+    soundTone(ctx,t+.045,275,65,.15,.08);
+  } else if (kind === "enemy") {
+    soundNoise(ctx,t,.11,.12,630);
+    soundTone(ctx,t,130,70,.13,.13);
+  } else if (kind === "miss") {
+    soundTone(ctx,t,280,175,.14,.055,"square");
+  } else if (kind === "combo") {
+    soundTone(ctx,t,520,780,.08,.045,"sine");
+    soundTone(ctx,t+.09,660,1060,.10,.045,"sine");
+  } else if (kind === "win") {
+    [440,554,659,880].forEach((hz,i) => soundTone(ctx,t+i*.115,hz,hz*1.02,.19,.09,"sine"));
+  } else if (kind === "lose") {
+    soundTone(ctx,t,320,105,.35,.12);
+  } else if (kind === "recruit") {
+    [480,650,940].forEach((hz,i) => soundTone(ctx,t+i*.075,hz,hz*1.05,.15,.075,"sine"));
+  }
+}
+function refreshSoundButton() {
+  const button=document.getElementById("sound-toggle");
+  if (!button) return;
+  button.textContent=soundEnabled ? "🔊" : "🔇";
+  button.setAttribute("aria-pressed", String(soundEnabled));
+  button.setAttribute("aria-label", soundEnabled ? "Couper les sons" : "Activer les sons");
+  button.title=soundEnabled ? "Couper les sons" : "Activer les sons";
+}
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  try { localStorage.setItem(SOUND_KEY,String(soundEnabled)); } catch (_) {}
+  if (soundEnabled) {
+    unlockSounds();
+    playSound('confirm');
+  } else {
+    stopCrowdNow();
+  }
+  refreshSoundButton();
+  syncCrowdAudio();
+}
+// Éclairs et bandes dessinées qui renforcent chaque impact.
+function impactEffect(container, label="POW!", side="right", heavy=false) {
+  if (!container) return;
+  const fx=document.createElement("span");
+  fx.className="impact-fx" + (heavy ? " impact-heavy" : "");
+  fx.textContent=label;
+  fx.style.left=side === "right" ? "67%" : "26%";
+  fx.style.top=heavy ? "33%" : "45%";
+  container.appendChild(fx);
+  container.classList.remove("arena-shake");
+  void container.offsetWidth;
+  container.classList.add("arena-shake");
+  setTimeout(() => {fx.remove();container.classList.remove("arena-shake");},560);
+}
+
+
+function shinyBonusPercent() {
+  return Object.values(game.shinyAlbum).filter(Boolean).length;
+}
+function localDayKey() {
+  const d = new Date();
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+}
+function eggState(egg, at=now()) {
+  if (!egg.startedAt) return 'stock';
+  const elapsed = at - egg.startedAt;
+  if (elapsed >= (egg.shiny ? EGG_SHINY_MS : EGG_NORMAL_MS)) return 'ready';
+  if (egg.shiny && elapsed >= EGG_NORMAL_MS) return 'glowing';
+  return 'incubating';
+}
+function eggTimeLeft(egg, at=now()) {
+  if (!egg.startedAt) return 0;
+  return Math.max(0, egg.startedAt + (egg.shiny ? EGG_SHINY_MS : EGG_NORMAL_MS) - at);
+}
+function readableDuration(ms) {
+  const seconds=Math.ceil(ms/1000);
+  const h=Math.floor(seconds/3600), m=Math.floor((seconds%3600)/60), sec=seconds%60;
+  return h ? `${h} h ${String(m).padStart(2,'0')} min` : `${m} min ${String(sec).padStart(2,'0')} s`;
+}
 function incomePerMinute() {
   const twoBest = [...game.fighters].sort((a, b) => b.level - a.level).slice(0, 2);
   const basic = twoBest.reduce((sum, fighter) => sum + LEVELS[fighter.level].income, 0);
-  return basic * (1 + .25 * (game.studioLevel - 1));
+  return basic * (1 + .25 * (game.studioLevel - 1)) * (1 + shinyBonusPercent() / 100);
 }
 function advanceCoins() {
   const time = now();
@@ -75,8 +278,61 @@ function showToast(message) {
   toastTimeout = setTimeout(() => el.classList.remove("visible"), 3300);
 }
 function strongestFighters() {
-  return [...game.fighters].sort((a, b) => b.level - a.level).slice(0, 2);
+  return [...game.fighters].sort((a, b) => b.level - a.level || Number(b.shiny)-Number(a.shiny)).slice(0, 2);
 }
+// Un choix indépendant des combattants diffusés : seul le visuel de l'entraînement change.
+function gymCompanion() {
+  const selected = game.fighters.find(f => f.id === game.gymCompanionId);
+  if (selected) return selected;
+  const fallback = strongestFighters()[0] || game.fighters[0] || null;
+  game.gymCompanionId = fallback?.id || null;
+  return fallback;
+}
+function chooseGymCompanion(id) {
+  if (training) return;
+  const fighter = game.fighters.find(f => f.id === id);
+  if (!fighter) return;
+  game.gymCompanionId = fighter.id;
+  save(); render();
+  showToast(`${fighter.shiny?'✨ ':''}${LEVELS[fighter.level].name} t'accompagnera à l'entraînement !`);
+}
+function gymCompanionHtml(fighter) {
+  if (!fighter) return '';
+  return `<div class="gym-companion-actor ${fighter.shiny?'shiny-actor':''}" aria-label="${LEVELS[fighter.level].name}${fighter.shiny?' shiny':''} t'accompagne">
+    <img class="gym-boxer breathing" id="gym-boxer" src="${imageFor(fighter.level)}" alt="${LEVELS[fighter.level].name}${fighter.shiny?' shiny':''}">
+  </div>`;
+}
+function gymRosterHtml(companion) {
+  return `<section class="card gym-choice-panel"><h2>🥊 Choisir mon accompagnateur</h2>
+      <p class="muted">Choisis librement un boxeur, même shiny ou niveau 1. Cela ne modifie ni ses statistiques ni les revenus TV.</p>
+      <div class="gym-roster" role="group" aria-label="Choix du boxeur pour l'entraînement">${game.fighters.map(f=>`
+        <button class="gym-roster-fighter ${companion?.id===f.id?'is-selected':''} ${f.shiny?'shiny-fighter':''}" type="button" data-action="choose-companion" data-fighter-id="${f.id}"
+          aria-pressed="${String(companion?.id===f.id)}" aria-label="Choisir ${LEVELS[f.level].name}, évolution ${f.level}${f.shiny?', shiny':''}">
+          <img src="${imageFor(f.level)}" alt=""><strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong><small>Niv. ${f.level}</small>
+          <span class="gym-roster-check">${companion?.id===f.id?'✓ Sélectionné':'Choisir'}</span>
+        </button>`).join('')}</div>
+    </section>`;
+}
+
+
+// Le compteur simule une audience en direct. Il varie légèrement sans changer les revenus.
+let viewerShift = 0;
+let viewerDelta = 0;
+function baseAudience() {
+  return 160 + game.studioLevel * 38 + strongestFighters().reduce((sum, fighter) => sum + fighter.level * 115, 0);
+}
+function currentAudience() { return Math.max(0, baseAudience() + viewerShift); }
+function tickAudience() {
+  const maximum = Math.max(5, Math.round(baseAudience() * .035));
+  const previous = viewerShift;
+  viewerShift = Math.min(maximum, Math.max(-maximum, viewerShift + Math.floor(Math.random() * 11) - 5));
+  viewerDelta = viewerShift - previous;
+  const label = document.getElementById('viewers-live');
+  const change = document.getElementById('viewers-change');
+  if (label) label.textContent = format(currentAudience());
+  if (change) { change.textContent = viewerDelta > 0 ? `▲ +${viewerDelta}` : viewerDelta < 0 ? `▼ ${viewerDelta}` : '• 0'; change.className = 'viewers-change ' + (viewerDelta >= 0 ? 'up' : 'down'); }
+}
+
 function fighterTile(fighter) {
   const info = LEVELS[fighter.level];
   return `<div class="fighter-card"><img src="${imageFor(fighter.level)}" alt="${info.name}"><b>${info.name}</b><small>Évolution ${fighter.level} · +${info.income} pièces/min</small></div>`;
@@ -88,53 +344,265 @@ function homeScreen() {
     <span class="kicker">📡 Les chaînes TV</span><h1 class="h1">Bienvenue au studio !</h1>
     <p class="muted">Ta chaîne rapporte des pièces automatiquement. Les deux meilleurs boxeurs passent à l'antenne.</p>
     <div class="tv-stage" aria-label="Boxe TV en direct">
-      <span class="live-label">● EN DIRECT</span><div class="stage-logo">BASTON <span>TV</span></div>
-      <div class="on-air">${onAir.map(f => `<div class="fighter-onair"><img class="breathing" src="${imageFor(f.level)}" alt="${LEVELS[f.level].name}"><strong>${LEVELS[f.level].name}</strong></div>`).join("")}
+      <span class="live-label">● EN DIRECT</span>
+      <div class="viewers-live" aria-label="Audience simulée en direct">👥 <b id="viewers-live">${format(currentAudience())}</b> <small id="viewers-change" class="viewers-change up">• 0</small></div><div class="stage-logo">BASTON <span>TV</span></div>
+      <div class="on-air">${onAir.map(f => `<div class="fighter-onair ${f.shiny?'shiny-fighter':''}"><img class="breathing" src="${imageFor(f.level)}" alt="${LEVELS[f.level].name}${f.shiny?' shiny':''}"><strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong></div>`).join("")}
       ${onAir.length < 2 ? '<div class="empty-slot">Place libre</div>' : ''}</div>
     </div>
     <div class="stat-grid"><div class="stat"><small>📈 Revenus TV</small><b id="rate-live">+${format(incomePerMinute())}/min</b><small>En jeu et hors ligne (8 h max.)</small></div>
     <div class="stat"><small>🎬 Niveau du studio</small><b>${game.studioLevel}</b><small>Bonus : +${25 * (game.studioLevel - 1)} %</small></div></div>
+    <div class="tv-shiny-caption">✨ Découvertes shiny : ${shinyBonusPercent()} / 4 · Bonus permanent : +${shinyBonusPercent()} % aux revenus TV</div>
     <button type="button" class="action secondary" data-action="go-gym">🥊 Aller s'entraîner</button>
     <button type="button" class="action pink" data-action="go-combat">⚔️ Essayer le combat animé !</button>
     <section class="card"><h2>🔧 Améliorer le studio</h2><p class="muted">Augmente de 25 % les revenus de tes émissions. Les nouvelles évolutions rapportent encore plus.</p>
     <div class="price"><span>Coût du prochain niveau</span><span>🪙 ${format(nextCost)}</span></div>
     <button class="action" type="button" data-action="upgrade" ${game.studioLevel >= 5 || Math.floor(game.coins) < nextCost ? "disabled" : ""}>${game.studioLevel >= 5 ? "Niveau maximal du prototype" : "Améliorer (+25 %)"}</button></section>
-    <div class="tip"><strong>💡 Astuce :</strong> deux Paumés rapportent 10 pièces/min. En les fusionnant, un Balourd rapporte 12 pièces/min, tout en libérant une place à l'antenne !</div>`;
+    <div class="tip"><strong>💡 Astuce :</strong> deux Paumés rapportent 10 pièces/min. En les fusionnant, un Balourd rapporte 12 pièces/min, tout en libérant une place à l'antenne !</div>
+    <section class="install-panel" id="install-panel"><h2>📱 Baston TV sur ton téléphone</h2>
+      <p>Installe le jeu depuis ton navigateur pour le retrouver sur ton écran d’accueil.</p>
+      <button class="action secondary" type="button" data-action="install-app" id="install-app-button">📲 Installer Baston TV</button></section>`;
 }
 function gymScreen() {
+  const companion = gymCompanion();
   if (training) return `<span class="kicker">🥊 Entraînement en cours</span><h1 class="h1">Frappe les points faibles !</h1>
-    <div class="train-stat"><span>⏱ <span id="training-timer">20,0</span> s</span><span>⭐ <span id="training-hits">0</span> touches</span><span>🔥 Combo <span id="training-combo">0</span></span></div>
+    <div class="train-stat"><span>⏱ <span id="training-timer">20,0</span> s</span><span>⭐ <span id="training-hits">0</span> touches</span><span>🔥 <span id="training-combo">0</span></span><span>❌ <span id="training-misses">0</span></span></div>
     <div class="progress"><span id="training-progress" style="width:100%"></span></div>
-    <div class="bag-arena" id="bag-arena" style="margin-top:12px"><div class="bag-cable"></div><img class="gym-boxer breathing" id="gym-boxer" src="${imageFor(strongestFighters()[0].level)}" alt="Ton boxeur s’entraîne"><div class="bag" id="bag"><button class="spot" id="spot" data-action="hit" aria-label="Frapper le point faible" style="left:50%;top:45%"></button></div></div>
+    <div class="bag-arena" id="bag-arena" style="margin-top:12px"><span class="gym-status" id="gym-status">Vise la cible !</span><div class="bag-cable"></div>${gymCompanionHtml(training.companion || companion)}<div class="bag" id="bag"><button class="spot" id="spot" data-action="hit" aria-label="Frapper le point faible" style="left:50%;top:45%"></button></div></div>
     <p class="muted">Le point faible change de place. Si tu rates ou si tu cliques à côté, tu perds du temps !</p>
-    <p class="subnote">⏳ Rater une cible : -0,7 s · Cliquer à côté : -0,5 s</p>`;
+    <p class="subnote">⏳ Cible expirée : −0,7 s · Mauvais clic : −0,5 s · 5 touches de suite = bonus</p>`;
   const result = latestReward ? `<section class="card"><h2>🎁 Dernière séance</h2><p class="muted">${latestReward.hits} point(s) touché(s) · meilleur combo : ${latestReward.best} · erreurs : ${latestReward.misses}</p><div class="reward-list">${latestReward.items.map(id => `<span class="reward-bubble">${EQUIPMENT.find(x => x.id === id).icon} ${EQUIPMENT.find(x => x.id === id).label}</span>`).join("")}</div></section>` : "";
   return `<span class="kicker">🎯 Les coulisses</span><h1 class="h1">Salle d'entraînement</h1>
     <p class="muted">Les points faibles sont plus espacés. Il faut être rapide et précis : les erreurs te font perdre du temps.</p>
-    <div class="bag-arena"><div class="bag-cable"></div><div class="bag"><div class="spot" style="left:49%;top:34%;pointer-events:none"></div></div></div>
+    <div class="bag-arena"><div class="bag-cable"></div>${gymCompanionHtml(companion)}<div class="bag"><div class="spot" style="left:49%;top:34%;pointer-events:none"></div></div></div>
+    ${gymRosterHtml(companion)}
     <div class="stat-grid"><div class="stat"><small>⏱ Durée</small><b>20 s</b></div><div class="stat"><small>🪙 Prix</small><b>100</b></div></div>
     <button class="action" type="button" data-action="start-training" ${Math.floor(game.coins) < TRAINING_COST ? "disabled" : ""}>🥊 Commencer la séance</button>
     ${Math.floor(game.coins) < TRAINING_COST ? '<p class="subnote">Pas assez de pièces. Laisse ta chaîne en produire un peu, puis reviens !</p>' : ''}
     ${result}
-    <div class="tip"><strong>Comment ça marche ?</strong> Une séance donne 1 à 4 équipements selon ton score, avec un bonus possible pour une série de 5 touches. Mais si tu rates, le chrono descend plus vite.</div>`;
+    <div class="tip"><strong>Comment ça marche ?</strong> Vise les cibles avant qu'elles disparaissent. Chaque faute retire du temps et interrompt le combo. Un combo de 5 rapporte un équipement bonus.</div>`;
+}
+function lockerCharacter(fighter, index, onAir=false) {
+  const level = fighter.level;
+  const x = 17 + (index % 3) * 33;
+  const floor = 22 + Math.floor(index / 3) * 155;
+  const delay = ((index * 73) % 17) / 10;
+  const duration = 3.2 + (index % 4) * .45;
+  return `<div class="locker-fighter ${onAir ? 'locker-on-air' : 'locker-wander'}" data-fighter-id="${fighter.id}" data-fighter-level="${level}" data-fighter-shiny="${fighter.shiny?'true':'false'}" tabindex="0" role="button" aria-label="${LEVELS[level].name} niveau ${level}${fighter.shiny?' shiny':''}. Glisse sur un autre combattant du même niveau et de la même rareté pour fusionner" style="--lx:${x}%;--floor-bottom:${floor}px;--delay:-${delay}s;--distance:${6+(index%4)*4}px;--duration:${duration}s">
+    <div class="locker-character ${fighter.shiny?'is-shiny':''}"><img src="${imageFor(level)}" draggable="false" alt=""><span class="locker-level">${fighter.shiny?'✨ ':''}Niv. ${level}</span></div>
+    <span class="locker-name">${fighter.shiny?'✨ ':''}${LEVELS[level].name}</span></div>`;
 }
 function collectionScreen() {
-  const ready = EQUIPMENT.every(item => game.equipment[item.id] > 0);
-  const counts = [1,2,3].map(level => ({ level, count: game.fighters.filter(f => f.level === level).length })).filter(f => f.count >= 2);
-  const fightersByLevel = [1,2,3,4].map(level => ({ level, count: game.fighters.filter(f => f.level === level).length })).filter(x => x.count > 0);
-  return `<span class="kicker">🧤 Les coulisses</span><h1 class="h1">Vestiaires & fusions</h1>
-    <p class="muted">Récupère un exemplaire de chaque équipement pour recruter un Paumé. Fusionne ensuite deux combattants de même évolution.</p>
-    <section class="card"><h2>🎁 Équipements de boxe</h2><div class="eq-grid">${EQUIPMENT.map(item => `<div class="eq-item ${game.equipment[item.id] > 0 ? 'ready' : ''}"><span>${item.icon} ${item.label}</span><b>×${game.equipment[item.id]}</b></div>`).join("")}</div>
-    <button class="action" type="button" data-action="recruit" ${ready ? '' : 'disabled'}>✨ Recruter un Paumé</button><p class="subnote">Recrutement : consomme un équipement de chaque type.</p></section>
-    <section class="card"><h2>🥊 Mes combattants (${game.fighters.length})</h2><div class="fighter-grid">${fightersByLevel.map(f => `<div class="fighter-card"><img class="breathing" src="${imageFor(f.level)}" alt="${LEVELS[f.level].name}"><b>${LEVELS[f.level].name}</b><small>Évolution ${f.level} · possédés : ${f.count}</small></div>`).join("")}</div></section>
-    <section class="card"><h2>🔗 Salle de fusion</h2><p class="muted">2 exemplaires identiques deviennent un combattant de l'évolution supérieure. Les fusions sont gratuites.</p>
-    ${counts.length ? counts.map(f => `<div class="fusion-line"><span>2 × ${LEVELS[f.level].name}<br>→ ${LEVELS[f.level+1].name}</span><button type="button" data-action="fusion" data-level="${f.level}">Fusionner</button></div>`).join("") : '<p class="muted">Pas encore de fusion disponible. Recrute un deuxième boxeur !</p>'}</section>`;
+  const ready=EQUIPMENT.every(item=>game.equipment[item.id]>0);
+  const onAir=strongestFighters();
+  const assigned=new Set(onAir.map(f=>f.id));
+  const others=game.fighters.filter(f=>!assigned.has(f.id));
+  const display=others.slice(0,16);
+  const rows=Math.max(1,Math.ceil(display.length/3));
+  const rest=others.length-display.length;
+  return `<span class="kicker">🧤 Les coulisses</span><h1 class="h1">Les vestiaires</h1>
+    <p class="muted">Les boxeurs qui ne sont pas à l'antenne se promènent dans le vestiaire. <b>Glisse deux combattants du même niveau et de la même rareté l'un sur l'autre pour fusionner.</b></p>
+    <section class="card locker-panel"><h2>📡 Sur le plateau TV</h2><p class="subnote">Ces deux vedettes restent immobiles, mais tu peux aussi les attraper pour fusionner.</p>
+      <div class="locker-onair-strip">${onAir.map((f,i)=>lockerCharacter(f,i,true)).join('')}${onAir.length<2?'<span class="locker-air-empty">Emplacement libre</span>':''}</div></section>
+    <section class="card locker-panel"><div class="locker-heading"><h2>🏠 Dans les coulisses (${others.length})</h2><span class="locker-help">☝️ Glisser pour fusionner</span></div>
+      <div class="locker-room" id="locker-room" style="--locker-height:${Math.max(305,rows*155+130)}px">
+        <div class="locker-poster">BASTON TV ★ CLUB</div><div class="locker-bench"></div>
+        ${Array.from({length:rows},(_,i)=>`<div class="locker-floor" style="bottom:${15+i*155}px"></div>`).join('')}
+        ${display.map((f,i)=>lockerCharacter(f,i)).join('')}
+        ${!others.length?'<p class="locker-empty">Tous tes boxeurs sont à l’antenne ! Tu peux quand même les fusionner en les faisant glisser l’un sur l’autre ci-dessus.</p>':''}
+      </div>${rest>0?`<p class="subnote">${rest} autre(s) combattant(s) en réserve. Les 16 premiers sont affichés.</p>`:''}
+      <p class="subnote" id="locker-instruction">Normal + normal → normal · Shiny + shiny → shiny. Les mélanges sont impossibles.</p></section>
+    <section class="card"><h2>🎁 Équipements de boxe</h2><div class="eq-grid">${EQUIPMENT.map(item => `<div class="eq-item ${game.equipment[item.id] > 0 ? 'ready' : ''}"><span>${item.icon} ${item.label}</span><b>×${game.equipment[item.id]}</b></div>`).join('')}</div>
+    <button class="action" type="button" data-action="recruit" ${ready ? '' : 'disabled'}>✨ Recruter un Paumé</button><p class="subnote">Consomme un exemplaire de chacun des quatre équipements.</p></section>`;
+}
+
+// Fusion au glisser-déposer, compatible avec la souris ET le tactile.
+let lockerDrag = null;
+let lockerSelection = null;
+function fighterById(id) { return game.fighters.find(f=>f.id===id); }
+function clearLockerSelection() { lockerSelection=null; document.querySelectorAll('.locker-fighter.selected-for-fusion').forEach(e=>e.classList.remove('selected-for-fusion')); }
+function fuseFighters(firstId, secondId) {
+  if (!firstId || !secondId || firstId===secondId) return false;
+  const a=fighterById(firstId), b=fighterById(secondId);
+  if (!a || !b || a.level!==b.level || Boolean(a.shiny)!==Boolean(b.shiny) || a.level>=4) return false;
+  const newLevel=a.level+1;
+  const companionWasUsed = game.gymCompanionId===a.id || game.gymCompanionId===b.id;
+  const fused = {id:getNewId(),level:newLevel,shiny:Boolean(a.shiny)};
+  game.fighters=game.fighters.filter(f=>f.id!==a.id && f.id!==b.id);
+  game.fighters.push(fused);
+  if (companionWasUsed) game.gymCompanionId=fused.id;
+  if (a.shiny) game.shinyAlbum[newLevel]=true;
+  clearLockerSelection();
+  playSound('combo'); save(); render();
+  showToast(`✨ Fusion ! ${LEVELS[newLevel].name}${a.shiny?' shiny':''} obtenu !`);
+  const room=document.querySelector('#locker-room');
+  if(room){room.classList.add('fusion-flash');setTimeout(()=>room.classList.remove('fusion-flash'),700);}
+  return true;
+}
+function selectLockerFighter(id) {
+  if (!fighterById(id)) return;
+  if (lockerSelection===id) {clearLockerSelection();return;}
+  if (!lockerSelection) {
+    lockerSelection=id;
+    document.querySelectorAll('.locker-fighter').forEach(el=>el.classList.toggle('selected-for-fusion',el.dataset.fighterId===id));
+    showToast('Choisis un deuxième boxeur du même niveau !');
+    return;
+  }
+  if (!fuseFighters(lockerSelection,id)) {
+    clearLockerSelection();
+    showToast('Fusion : il faut deux boxeurs du même niveau et tous les deux normaux ou shinies.');
+  }
+}
+function updateLockerDrag(ev) {
+  if (!lockerDrag) return;
+  const d=lockerDrag;
+  const dx=ev.clientX-d.startX, dy=ev.clientY-d.startY;
+  if (Math.abs(dx)+Math.abs(dy)>8) d.moved=true;
+  if (d.ghost) {
+    d.ghost.style.left=`${ev.clientX-d.offsetX}px`;
+    d.ghost.style.top=`${ev.clientY-d.offsetY}px`;
+  }
+  document.querySelectorAll('.locker-fighter.drop-ok,.locker-fighter.drop-no').forEach(e=>e.classList.remove('drop-ok','drop-no'));
+  const hit=document.elementFromPoint(ev.clientX,ev.clientY)?.closest('.locker-fighter');
+  if(hit && hit.dataset.fighterId!==d.id) {
+    hit.classList.add(Number(hit.dataset.fighterLevel)===d.level && hit.dataset.fighterShiny===d.shiny && d.level<4?'drop-ok':'drop-no');
+  }
+}
+function endLockerDrag(ev) {
+  if (!lockerDrag) return;
+  const d=lockerDrag;lockerDrag=null;
+  d.el.classList.remove('drag-source');
+  d.ghost?.remove();
+  document.querySelectorAll('.locker-fighter.drop-ok,.locker-fighter.drop-no').forEach(e=>e.classList.remove('drop-ok','drop-no'));
+  const target=ev.type==='pointercancel'?null:document.elementFromPoint(ev.clientX,ev.clientY)?.closest('.locker-fighter');
+  if (!d.moved) {selectLockerFighter(d.id); return;}
+  if (target && target.dataset.fighterId!==d.id && fuseFighters(d.id,target.dataset.fighterId)) return;
+  showToast('Dépose-le sur un boxeur du même niveau et de la même rareté (normal/shiny).');
+}
+document.addEventListener('pointerdown',ev=>{
+  if(currentView!=='collection' || ev.button!==0 || lockerDrag) return;
+  const el=ev.target.closest('.locker-fighter');
+  if(!el || !fighterById(el.dataset.fighterId))return;
+  ev.preventDefault();
+  const rect=el.getBoundingClientRect();
+  const ghost=el.cloneNode(true);
+  ghost.className='locker-fighter locker-drag-ghost';
+  ghost.removeAttribute('data-fighter-id');
+  ghost.removeAttribute('tabindex');
+  ghost.style.width=`${rect.width}px`;ghost.style.height=`${rect.height}px`;
+  document.body.appendChild(ghost);
+  lockerDrag={id:el.dataset.fighterId,level:Number(el.dataset.fighterLevel),shiny:el.dataset.fighterShiny,el,ghost,
+    startX:ev.clientX,startY:ev.clientY,offsetX:ev.clientX-rect.left,offsetY:ev.clientY-rect.top,moved:false};
+  el.classList.add('drag-source');
+  updateLockerDrag(ev);
+});
+window.addEventListener('pointermove',ev=>{if(lockerDrag){ev.preventDefault();updateLockerDrag(ev)}},{passive:false});
+window.addEventListener('pointerup',endLockerDrag);
+window.addEventListener('pointercancel',endLockerDrag);
+document.addEventListener('keydown',ev=>{
+  const item=ev.target.closest('.locker-fighter');
+  if(item && (ev.key==='Enter'||ev.key===' ')) {ev.preventDefault(); selectLockerFighter(item.dataset.fighterId);}
+});
+// Première version jouable de l'incubateur. Les gemmes et les récompenses de
+// championnat arriveront en v0.9 ; le bouton test évite d'attendre des heures.
+function eggSlotHtml(egg) {
+  const state=eggState(egg);
+  const revealed=state==='glowing' || (state==='ready' && egg.shiny);
+  const name=state==='stock'?'En attente':state==='incubating'?'Incubation...':state==='glowing'?'✨ SHINY !':'Prêt à ouvrir !';
+  const badge=state==='stock'?'📦':revealed?'🌟':state==='ready'?'🎉':'⏳';
+  return `<div class="egg-slot ${revealed?'egg-shiny':''} ${state==='ready'?'egg-ready':''}">
+    <div class="egg-visual ${revealed?'egg-glowing':''}" aria-hidden="true">🥚</div>
+    <strong>${badge} ${name}</strong>
+    ${state==='incubating'||state==='glowing'?`<small class="egg-countdown">${readableDuration(eggTimeLeft(egg))}</small>`:''}
+    ${state==='stock'?`<button class="egg-button" data-action="incubate" data-egg-id="${egg.id}">Incuber</button>`:''}
+    ${state==='ready'?`<button class="egg-button" data-action="hatch" data-egg-id="${egg.id}">Ouvrir l'œuf</button>`:''}
+    ${state==='incubating'||state==='glowing'?`<button class="egg-button egg-gems-button" data-action="gem-egg" data-egg-id="${egg.id}" ${game.gems<GEM_ACCEL_COST?'disabled':''}>💎 ${GEM_ACCEL_COST} gemmes · −30 min</button>
+    <button class="egg-test-button" data-action="test-egg" data-egg-id="${egg.id}">⏩ Accélérer (test)</button>`:''}
+  </div>`;
 }
 function laterScreen() {
-  return `<span class="kicker">🚧 Prochaines mises à jour</span><h1 class="h1">Le studio s'agrandira !</h1>
-    <section class="card soon"><div class="big">🥚</div><h2>Incubateur & shinies</h2><p class="muted">Bientôt : un œuf gratuit chaque jour, trois emplacements maximum, 30 % de chance de shiny et révélation après 30 minutes.</p></section>
-    <section class="card soon"><div class="big">🏆</div><h2>Championnats</h2><p class="muted">Bientôt : équipes de trois, QTE, remplacement volontaire et sept disciplines. Un duel d’animation 1 contre 1 est déjà disponible dans l’onglet Combat.</p></section>
-    <p class="subnote">Ces fonctionnalités font partie du cahier des charges, mais pas encore de ce prototype.</p>`;
+  const canClaim=game.lastDailyEgg!==localDayKey() && game.eggs.length<EGG_CAP;
+  const shinyEntries=[1,2,3,4].map(level=>`<div class="album-entry ${game.shinyAlbum[level]?'unlocked':''}">${game.shinyAlbum[level]?'✨':'🔒'}<small>Niv. ${level}</small></div>`).join('');
+  return `<span class="kicker">🥚 Les coulisses</span><h1 class="h1">Incubateur shiny</h1>
+    <p class="muted">Un œuf peut contenir un boxeur normal de niveau 1 ou 2, ou un shiny rare avec une aura dorée. Après 30 minutes, un œuf shiny commence à briller ; il éclot au bout de 2 heures.</p>
+    <section class="card"><h2>🎁 Œuf du jour</h2><p class="muted">Un œuf gratuit par jour · Stock maximum de ${EGG_CAP} œufs · Un seul incubateur actif.</p>
+      <div class="gem-caption">💎 Gemmes : <b>${format(game.gems)}</b> · Accélération de 30 min : <b>${GEM_ACCEL_COST} gemmes</b></div>
+      <div class="egg-header"><span>Œufs stockés : <b>${game.eggs.length} / ${EGG_CAP}</b></span><span>Chance shiny : <b>30 %</b></span></div>
+      <button class="action" data-action="daily-egg" ${canClaim?'':'disabled'}>${game.lastDailyEgg===localDayKey()?'✓ Œuf du jour déjà récupéré':game.eggs.length>=EGG_CAP?'📦 Stock plein (3/3)':'🎁 Récupérer mon œuf quotidien'}</button>
+    </section>
+    <section class="card"><h2>🏆 Œufs gagnés au combat</h2>
+      <p class="muted">Tous les ${WINS_PER_EGG} combats de démonstration gagnés : un œuf bonus. Victoires : <b>${game.combatWins}</b> · Prochain œuf dans <b>${WINS_PER_EGG - (game.combatWins % WINS_PER_EGG)}</b> victoire(s).</p>
+      <p class="muted">Récompenses à récupérer : <b>${game.pendingCombatEggs}</b>. Si ton stock est plein, elles restent ici.</p>
+      <button class="action secondary" data-action="claim-combat-egg" ${game.pendingCombatEggs>0 && game.eggs.length<EGG_CAP?'':'disabled'}>🥚 Récupérer un œuf de victoire</button>
+    </section>
+    <section class="card egg-testing"><h2>🧪 Tests du prototype</h2>
+      <p class="muted">Ces boutons ne comptent pas comme œuf quotidien. Tu peux tester autant de fois que tu veux, tant que le stock n'est pas plein.</p>
+      <button class="action secondary" data-action="add-test-egg" ${game.eggs.length >= EGG_CAP?'disabled':''}>🥚 Ajouter un œuf de test (30 % shiny)</button>
+      <button class="action pink" data-action="add-test-shiny" ${game.eggs.length >= EGG_CAP?'disabled':''}>✨ Ajouter un œuf shiny garanti (test)</button>
+      <p class="subnote">Il faut ensuite cliquer sur Incuber puis Accélérer (test), et enfin ouvrir l'œuf. Un shiny reste réservé aux fusions shiny.</p>
+    </section>
+    <section class="card"><h2>🔮 Mes œufs</h2><div class="egg-grid">${game.eggs.map(eggSlotHtml).join('')}${Array.from({length:Math.max(0,EGG_CAP-game.eggs.length)},()=>'<div class="egg-slot egg-empty"><span>＋</span><small>Emplacement libre</small></div>').join('')}</div>
+      ${!game.eggs.length?'<p class="subnote">Récupère ton œuf gratuit pour lancer une première incubation.</p>':''}
+      <p class="subnote">💎 Les gemmes permettent d'accélérer de 30 min. Le bouton gratuit « test » restera seulement pendant le prototype. Durées : 30 min / 2 h.</p>
+    </section>
+    <section class="card"><h2>✨ Album shiny — Les Bourrins</h2><div class="shiny-album">${shinyEntries}</div>
+      <p class="muted">Chaque nouvelle évolution shiny découverte apporte <b>+1 % de revenus TV permanents</b>. Bonus actuel : <b>+${shinyBonusPercent()} %</b>. Les shinies ne sont pas plus forts en combat.</p>
+    </section>
+    <div class="tip">Fusion : shiny + shiny uniquement, même niveau. Un shiny ne peut jamais fusionner avec un normal. Des championnats plus complets arriveront ensuite.</div>`;
+}
+function claimDailyEgg() {
+  if (game.lastDailyEgg===localDayKey()) return showToast('Tu as déjà reçu ton œuf aujourd’hui.');
+  if (game.eggs.length>=EGG_CAP) return showToast('Stock plein : ouvre un œuf avant de récupérer le suivant.');
+  game.lastDailyEgg=localDayKey();
+  game.eggs.push({id:getNewId(),startedAt:null});
+  playSound('confirm');save();render();showToast('🥚 Un œuf ajouté à ton stock !');
+}
+function addTestEgg(forceShiny=false) {
+  if (game.eggs.length >= EGG_CAP) return showToast('Stock plein : ouvre un œuf avant de continuer les tests.');
+  game.eggs.push({id:getNewId(), startedAt:null, testForcedShiny:Boolean(forceShiny)});
+  playSound('confirm'); save(); render();
+  showToast(forceShiny ? '✨ Œuf shiny de test ajouté !' : '🥚 Œuf de test ajouté !');
+}
+function incubateEgg(id) {
+  const egg=game.eggs.find(e=>e.id===id);
+  if (!egg || egg.startedAt || game.eggs.some(e=>e.startedAt)) return showToast('Un seul œuf peut être dans l’incubateur à la fois. Ouvre le précédent.');
+  const shiny=egg.testForcedShiny || Math.random()<SHINY_RATE;
+  egg.shiny=shiny;
+  egg.level=shiny?(Math.random()<.05?2:1):(Math.random()<.35?2:1);
+  egg.startedAt=now();
+  save();render();showToast('Incubation lancée !');
+}
+function hatchEgg(id) {
+  const egg=game.eggs.find(e=>e.id===id);
+  if (!egg || eggState(egg)!=='ready') return;
+  const fighter={id:getNewId(),level:egg.level,shiny:Boolean(egg.shiny)};
+  game.fighters.push(fighter);
+  if (fighter.shiny) game.shinyAlbum[fighter.level]=true;
+  game.eggs=game.eggs.filter(e=>e.id!==id);
+  playSound('recruit');save();render();
+  showToast(`${fighter.shiny?'✨ SHINY ! ':'🎉 '}${LEVELS[fighter.level].name} niveau ${fighter.level} obtenu !`);
+}
+function accelerateEggGems(id) {
+  const egg=game.eggs.find(e=>e.id===id);
+  if (!egg || !egg.startedAt || eggState(egg)==='ready') return;
+  if (game.gems < GEM_ACCEL_COST) return showToast('Pas assez de gemmes pour accélérer cet œuf.');
+  game.gems -= GEM_ACCEL_COST;
+  egg.startedAt -= GEM_ACCEL_MS;
+  playSound('confirm'); save();render();
+  showToast(eggState(egg)==='glowing'?'🌟 L’œuf se met à briller !':eggState(egg)==='ready'?'🥚 L’œuf est prêt !':'⏩ Incubation avancée de 30 min !');
+}
+function claimCombatEgg() {
+  if (!game.pendingCombatEggs) return;
+  if (game.eggs.length >= EGG_CAP) return showToast('Stock plein, récupère ton œuf plus tard.');
+  game.pendingCombatEggs--;
+  game.eggs.push({id:getNewId(),startedAt:null});
+  playSound('confirm');save();render();showToast('🥚 Œuf de victoire récupéré !');
+}
+function accelerateEggTest(id) {
+  const egg=game.eggs.find(e=>e.id===id);
+  if (!egg || !egg.startedAt || eggState(egg)==='ready') return;
+  const elapsed=now()-egg.startedAt;
+  egg.startedAt=now() - (elapsed < EGG_NORMAL_MS ? EGG_NORMAL_MS+1000 : EGG_SHINY_MS+1000);
+  save();render();showToast(eggState(egg)==='glowing'?'🌟 Surprise : cet œuf est shiny !':'🥚 Éclosion prête !');
 }
 // Première arène de démonstration : un boxeur, deux attaques animées, un adversaire.
 // Ce n'est pas encore le vrai championnat 3 contre 3.
@@ -146,12 +614,12 @@ function combatScreen() {
     <p class="muted">Notre toute première arène ! Deux mouvements : les personnages respirent et se balancent, puis avancent pour frapper. Les adversaires réagissent aux coups.</p>
     <div class="fight-arena fight-preview">
       <div class="ring-glow"></div><div class="ring-floor"></div>
-      <div class="fight-actor player-actor"><img class="breathing" src="${imageFor(fighter.level)}" alt="${LEVELS[fighter.level].name}"></div>
+      <div class="fight-actor player-actor ${fighter.shiny?'shiny-actor':''}"><img class="breathing" src="${imageFor(fighter.level)}" alt="${LEVELS[fighter.level].name}"></div>
       <div class="fight-actor enemy-actor"><img class="breathing" src="${imageFor(1)}" alt="Le Paumé adverse"></div>
       <span class="ring-versus">VS</span>
     </div>
     <section class="card"><h2>🥊 ${LEVELS[fighter.level].name} contre Le Paumé</h2><p class="muted">Le boxeur le plus évolué de ta collection entre sur le ring. Les dégâts et les points de vie sont simplifiés pour tester les animations.</p><button type="button" data-action="start-duel" class="action">🎬 Lancer le combat !</button></section>
-    <div class="tip">Cette version ajoute un duel d'essai. Les équipes de 3, les vrais QTE et les 7 disciplines arriveront après.</div>`;
+    <div class="tip">Tous les 3 duels gagnés : 1 œuf à récupérer dans l’incubateur. Une victoire sur deux donne aussi 2 gemmes. Les équipes de 3 et les championnats arriveront après.</div>`;
   const end = duel.result !== null;
   return `<span class="kicker">🥊 Boxe TV · Démo de combat</span><h1 class="h1">${end ? duel.result === 'win' ? 'Victoire ! 🎉' : 'Défaite ! 💥' : 'Sur le ring !'}</h1>
     <div class="fight-top">
@@ -161,9 +629,9 @@ function combatScreen() {
     </div>
     <div class="fight-arena ${end?'fight-done':''}" id="fight-arena">
       <span class="fight-live">● EN DIRECT</span><div class="ring-glow"></div><div class="ring-floor"></div>
-      <div class="fight-actor player-actor" id="player-actor"><img class="breathing" src="${imageFor(level)}" alt="${character.name}"></div>
-      <div class="fight-actor enemy-actor" id="enemy-actor"><img class="breathing" src="${imageFor(1)}" alt="Le Paumé TV adverse"></div>
-      ${end ? `<div class="fight-banner">${duel.result==='win'?'🏆 VICTOIRE !':'💥 K.O. !'}</div>` : ''}
+      <div class="fight-actor player-actor ${duel.shiny?'shiny-actor':''} ${end && duel.result==='lose'?'knocked-out':''}" id="player-actor"><img class="breathing" src="${imageFor(level)}" alt="${character.name}"></div>
+      <div class="fight-actor enemy-actor ${end && duel.result==='win'?'knocked-out':''}" id="enemy-actor"><img class="breathing" src="${imageFor(1)}" alt="Le Paumé TV adverse"></div>
+      ${end ? `<div class="fight-end-overlay ${duel.result}"><strong>${duel.result==='win'?'🏆 VICTOIRE !':'💥 DÉFAITE !'}</strong><span>${duel.result==='win'?'+75 pièces TV':'Reviens plus fort !'}</span></div>` : ''}
     </div>
     <p class="combat-log" id="combat-log" aria-live="polite">${end ? duel.result==='win'?'Tu remportes 75 pièces !':'Tu peux réessayer sans perdre ton boxeur.' : 'Choisis une attaque pour voir ton boxeur bouger.'}</p>
     ${end ? '<button class="action" data-action="start-duel" type="button">🔁 Refaire un combat</button><button class="action secondary" data-action="go-gym" type="button">🥊 Retour à l’entraînement</button>' :
@@ -173,7 +641,7 @@ function combatScreen() {
 function startDuel() {
   const level = strongestFighters()[0].level;
   const maxPlayerHP = 76 + level * 24;
-  duel = {level, maxPlayerHP, playerHP:maxPlayerHP, maxEnemyHP:64 + level * 12, enemyHP:64 + level * 12, busy:false, result:null};
+  duel = {level, shiny:Boolean(strongestFighters()[0].shiny), maxPlayerHP, playerHP:maxPlayerHP, maxEnemyHP:64 + level * 12, enemyHP:64 + level * 12, busy:false, result:null};
   currentView='combat';
   render();
 }
@@ -189,21 +657,37 @@ function refreshDuelUI() {
   }
 }
 function floatingDamage(side, amount) {
-  const actor = document.getElementById(side+'-actor');
-  if(!actor) return;
+  // Le boxeur adverse est retourné en CSS (scaleX(-1)).
+  // Le texte doit être dans l'arène pour rester toujours lisible à l'endroit.
+  const actor = document.getElementById(side + '-actor');
+  const arena = document.getElementById('fight-arena');
+  if (!actor || !arena) return;
+  const frame = arena.getBoundingClientRect();
+  const target = actor.getBoundingClientRect();
   const bubble = document.createElement('span');
-  bubble.className='floating-damage';
-  bubble.textContent=`−${amount}`;
-  actor.appendChild(bubble);
-  setTimeout(()=>bubble.remove(),850);
+  bubble.className = 'floating-damage';
+  bubble.textContent = `−${amount}`;
+  bubble.style.left = `${target.left - frame.left + target.width * 0.5}px`;
+  bubble.style.top = `${Math.max(20, target.top - frame.top + target.height * 0.12)}px`;
+  bubble.style.transform = 'translateX(-50%)';
+  arena.appendChild(bubble);
+  setTimeout(() => bubble.remove(), 850);
 }
 function finishDuel(result) {
   if(!duel || duel.result) return;
   duel.result=result;
   duel.busy=false;
-  if(result==='win') {game.coins+=75;save();}
+  if(result==='win') {
+    game.coins+=75;
+    game.combatWins++;
+    if (game.combatWins % WINS_PER_EGG === 0) game.pendingCombatEggs++;
+    if (game.combatWins % 2 === 0) game.gems += 2; // prototype : gemmes gagnées une victoire sur deux
+    save();
+  }
+  playSound(result === 'win' ? 'win' : 'lose');
+  // Pas de faux cri de foule : on conserve seulement la mélodie de victoire.
   render();
-  showToast(result==='win'?'🏆 Bravo ! +75 pièces':'💥 Défaite ! Aucun combattant perdu.');
+  showToast(result==='win' ? (game.combatWins%WINS_PER_EGG===0?'🏆 +75 pièces et 1 œuf à récupérer !':'🏆 Bravo ! +75 pièces') : '💥 Défaite ! Aucun combattant perdu.');
 }
 function punch(type) {
   if(!duel || duel.busy || duel.result || currentView!=='combat') return;
@@ -221,6 +705,8 @@ function punch(type) {
     if(duel!==fight || fight.result) return;
     fight.enemyHP=Math.max(0,fight.enemyHP-amount);
     enemy?.classList.add('taking-hit');
+    playSound(type === 'uppercut' ? 'uppercut' : 'jab');
+    impactEffect(document.getElementById('fight-arena'),type === 'uppercut' ? 'BOUM !' : 'POW !','right',type === 'uppercut');
     floatingDamage('enemy',amount);
     refreshDuelUI();
     if(fight.enemyHP===0){setTimeout(()=>{if(duel===fight) finishDuel('win')},500);return;}
@@ -234,6 +720,8 @@ function punch(type) {
         if(duel!==fight || fight.result) return;
         fight.playerHP=Math.max(0,fight.playerHP-retaliation);
         player?.classList.add('taking-hit');
+        playSound('enemy');
+        impactEffect(document.getElementById('fight-arena'),'Paf !','left',false);
         floatingDamage('player',retaliation);
         refreshDuelUI();
         if(fight.playerHP===0){setTimeout(()=>{if(duel===fight) finishDuel('lose')},450);return;}
@@ -259,16 +747,24 @@ function render() {
     if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
   });
   updateLiveLabels();
+  const installPanel = document.getElementById('install-panel');
+  if (installPanel) installPanel.hidden = installedMode();
+  tickAudience();
+  refreshSoundButton();
+  syncCrowdAudio();
 }
 function updateLiveLabels() {
   const coins = document.querySelector("#coins-live");
   if (coins) coins.textContent = format(game.coins);
+  const gems = document.querySelector('#gems-live');
+  if (gems) gems.textContent = format(game.gems);
   const rate = document.querySelector("#rate-live");
   if (rate) rate.textContent = `+${format(incomePerMinute())}/min`;
 }
 function changeView(next) {
   if (training) { showToast("Termine ta séance avant de changer de salle !"); return; }
   if (duel?.busy && currentView === "combat") { showToast("Attends la fin du coup !"); return; }
+  clearLockerSelection();
   currentView = next;
   render();
   window.scrollTo({top:0,behavior:"instant"});
@@ -284,7 +780,9 @@ function startTraining() {
   if (training || game.coins < TRAINING_COST) return;
   game.coins -= TRAINING_COST;
   game.sessions++;
-  training = { start: performance.now(), end: performance.now() + TRAINING_MS, next: 0, hits: 0, misses: 0, wrongClicks: 0, combo: 0, best: 0, spotX: 50, spotY: 45 };
+  const chosen = gymCompanion();
+  training = { start: performance.now(), end: performance.now() + TRAINING_MS, next: 0, hits: 0, misses: 0, wrongClicks: 0, combo: 0, best: 0, spotX: 50, spotY: 45,
+    companion: chosen ? { id:chosen.id, level:chosen.level, shiny:Boolean(chosen.shiny) } : null };
   latestReward = null;
   save(); render();
   moveSpot();
@@ -311,12 +809,26 @@ function moveSpot() {
   spot.style.animation = "";
   training.next = performance.now() + SPOT_LIFETIME_MS;
 }
-function spawnMarker(x, y, type = "miss") {
+function spotCenterInArena() {
+  const arena=document.getElementById("bag-arena");
+  const spot=document.getElementById("spot");
+  if (!arena || !spot) return null;
+  const a=arena.getBoundingClientRect(), s=spot.getBoundingClientRect();
+  return {x:(s.left+s.right)/2-a.left, y:(s.top+s.bottom)/2-a.top};
+}
+function gymFeedback(message, positive=false) {
+  const status=document.getElementById("gym-status");
+  if (!status) return;
+  status.textContent=message;
+  status.classList.toggle("positive",positive);
+  status.classList.remove("bounce-label"); void status.offsetWidth; status.classList.add("bounce-label");
+}
+function spawnMarker(x, y, type = "miss", text = "") {
   const arena = document.querySelector('#bag-arena') || document.querySelector('.bag-arena');
   if (!arena) return;
   const mark = document.createElement('span');
   mark.className = `marker marker-${type}`;
-  mark.textContent = type === 'good' ? '✔' : '✖';
+  mark.textContent = (type === 'good' ? '✔' : '✖') + (text ? ` ${text}` : '');
   mark.style.left = `${x}px`;
   mark.style.top = `${y}px`;
   arena.appendChild(mark);
@@ -328,19 +840,25 @@ function penalizeTraining(ms, reason = 'miss', x = null, y = null) {
   training.misses++;
   training.combo = 0;
   if (reason === 'wrong') training.wrongClicks++;
+  playSound("miss");
+  gymFeedback(reason === 'wrong' ? "Aïe, mauvais clic ! −0,5 s" : "Trop tard ! −0,7 s");
+  const missesLabel=document.getElementById('training-misses');
+  const comboLabel=document.getElementById('training-combo');
+  if (missesLabel) missesLabel.textContent=String(training.misses);
+  if (comboLabel) comboLabel.textContent='0';
   const arena = document.querySelector('#bag-arena') || document.querySelector('.bag-arena');
   if (arena) {
     const rect = arena.getBoundingClientRect();
     const fx = x ?? rect.width * (training.spotX / 100);
     const fy = y ?? rect.height * ((training.spotY + 5) / 100);
-    spawnMarker(fx, fy, 'miss');
+    spawnMarker(fx, fy, 'miss', reason === 'wrong' ? '−0,5 s' : '−0,7 s');
   }
 }
 function trainingMissedSpot() {
   const arena = document.querySelector('#bag-arena') || document.querySelector('.bag-arena');
   if (!arena || !training) return penalizeTraining(MISS_PENALTY_MS, 'miss');
-  const rect = arena.getBoundingClientRect();
-  penalizeTraining(MISS_PENALTY_MS, 'miss', rect.width * (training.spotX / 100), rect.height * (training.spotY / 100));
+  const center=spotCenterInArena();
+  penalizeTraining(MISS_PENALTY_MS,'miss',center?.x ?? null,center?.y ?? null);
 }
 function handleGymMiss(event) {
   if (!training || currentView !== 'gym') return;
@@ -356,6 +874,10 @@ function handleGymMiss(event) {
 
 function hitSpot() {
   if (!training || performance.now() >= training.end) return;
+  if (performance.now() >= training.next) {
+    trainingMissedSpot(); moveSpot();
+    return;
+  }
   training.hits++;
   training.combo++;
   const bag = document.querySelector('#bag');
@@ -363,7 +885,12 @@ function hitSpot() {
   if (bag) {bag.classList.remove('bag-hit'); void bag.offsetWidth; bag.classList.add('bag-hit');}
   if (boxer) {boxer.classList.remove('gym-punch'); void boxer.offsetWidth; boxer.classList.add('gym-punch');}
   const arena = document.querySelector('#bag-arena') || document.querySelector('.bag-arena');
-  if (arena) { const rect = arena.getBoundingClientRect(); spawnMarker(rect.width * (training.spotX / 100), rect.height * (training.spotY / 100), 'good'); }
+  const center=spotCenterInArena();
+  if (arena && center) spawnMarker(center.x,center.y,'good');
+  if (arena) impactEffect(arena,"BAM!","right",false);
+  playSound('bag');
+  if (training.combo % 5 === 0) { playSound('combo'); gymFeedback(`SUPER COMBO ×${training.combo} !`,true); }
+  else gymFeedback('Bien joué !',true);
   training.best = Math.max(training.best, training.combo);
   moveSpot();
   const hits = document.querySelector("#training-hits");
@@ -388,6 +915,7 @@ function finishTraining() {
     items.push(id);
   }
   latestReward = {hits,best,items,misses: training.misses};
+  playSound(hits >= 8 ? 'combo' : 'recruit');
   training = null;
   save(); render();
   showToast(`${total} équipement(s) gagné(s) ! Va voir les vestiaires.`);
@@ -396,23 +924,19 @@ function recruit() {
   if (!EQUIPMENT.every(item => game.equipment[item.id] > 0)) return;
   EQUIPMENT.forEach(item => game.equipment[item.id]--);
   game.fighters.push({id:getNewId(),level:1});
-  save();render();showToast("Nouveau combattant recruté : Le Paumé !");
+  playSound('recruit'); save();render();showToast("Nouveau combattant recruté : Le Paumé !");
 }
-function fuse(level) {
-  if (![1,2,3].includes(level)) return;
-  const pair = game.fighters.filter(f=>f.level===level).slice(0,2);
-  if (pair.length < 2) return;
-  const removed = new Set(pair.map(f=>f.id));
-  game.fighters = game.fighters.filter(f=>!removed.has(f.id));
-  game.fighters.push({id:getNewId(),level:level+1});
-  save();render();showToast(`Fusion réussie : ${LEVELS[level+1].name} !`);
-}
-
 document.addEventListener("click", event => {
   handleGymMiss(event);
   const nav = event.target.closest("[data-view]");
-  if (nav) {changeView(nav.dataset.view);return;}
   const target = event.target.closest("[data-action]");
+  // Les boutons ont un petit clic de validation, mais les cibles du sac
+  // utilisent exclusivement leur propre effet sonore de frappe.
+  if (nav || (target && target.dataset.action !== 'toggle-sound')) {
+    unlockSounds();
+    if (!target || target.dataset.action !== 'hit') playSound('ui');
+  }
+  if (nav) {changeView(nav.dataset.view);return;}
   if (!target) return;
   switch(target.dataset.action) {
     case "go-gym": changeView("gym"); break;
@@ -421,11 +945,60 @@ document.addEventListener("click", event => {
     case "punch": punch(target.dataset.type); break;
     case "upgrade": upgrade(); break;
     case "start-training": startTraining(); break;
+    case "choose-companion": chooseGymCompanion(target.dataset.fighterId); break;
+    case "toggle-sound": toggleSound(); break;
+    case "install-app": installBastonTV(); break;
     case "hit": hitSpot(); break;
     case "recruit": recruit(); break;
-    case "fusion": fuse(Number(target.dataset.level)); break;
+    case "daily-egg": claimDailyEgg(); break;
+    case "add-test-egg": addTestEgg(false); break;
+    case "add-test-shiny": addTestEgg(true); break;
+    case "incubate": incubateEgg(target.dataset.eggId); break;
+    case "hatch": hatchEgg(target.dataset.eggId); break;
+    case "test-egg": accelerateEggTest(target.dataset.eggId); break;
+    case "gem-egg": accelerateEggGems(target.dataset.eggId); break;
+    case "claim-combat-egg": claimCombatEgg(); break;
   }
 });
+
+// PWA : bouton d'installation Android/Chrome et aide pour iPhone et autres navigateurs.
+let deferredInstallPrompt = null;
+const installedMode = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  const panel = document.getElementById('install-panel');
+  if (panel) panel.hidden = true;
+  showToast('📱 Baston TV est installée !');
+});
+function installHelpContent() {
+  const ua = navigator.userAgent || '';
+  const ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!window.isSecureContext) return '<p>Pour installer la PWA sur ton téléphone, ouvre le jeu depuis une adresse <strong>HTTPS</strong> (par exemple GitHub Pages), pas une adresse locale du PC.</p>';
+  if (ios) return '<p>Sur iPhone ou iPad :</p><ul><li>Ouvre Baston TV dans ton navigateur.</li><li>Appuie sur <strong>Partager</strong>.</li><li>Choisis <strong>Sur l’écran d’accueil</strong> (ou « Ajouter à l’écran d’accueil »), puis confirme.</li></ul>';
+  return '<p>Sur Android : ouvre Baston TV dans <strong>Chrome</strong> ou <strong>Samsung Internet</strong>, puis utilise le menu du navigateur (⋮) et choisis <strong>Installer l’application</strong> ou <strong>Ajouter à l’écran d’accueil</strong>.</p><p>Si tu ne vois pas l’option, vérifie que le jeu est publié en HTTPS et recharge la page.</p>';
+}
+async function installBastonTV() {
+  if (installedMode()) { showToast('📱 Baston TV est déjà installée !'); return; }
+  if (deferredInstallPrompt) {
+    const prompt = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    try { await prompt.prompt(); await prompt.userChoice; }
+    catch (_) { showInstallHelp(); }
+    return;
+  }
+  showInstallHelp();
+}
+function showInstallHelp() {
+  const dialog = document.getElementById('install-dialog');
+  const message = document.getElementById('install-help');
+  if (!dialog || !message) return;
+  message.innerHTML = installHelpContent();
+  if (!dialog.open) dialog.showModal();
+}
 
 const offlineCoins = advanceCoins();
 save(); render();
@@ -450,5 +1023,7 @@ setInterval(() => {
   }
 }, 100);
 setInterval(save, 4_000);
-document.addEventListener("visibilitychange",()=>{ if(document.hidden) save(); else {advanceCoins(); updateLiveLabels();} });
+setInterval(()=>{if(!document.hidden && currentView==='home')tickAudience();},3200);
+setInterval(()=>{if(!document.hidden && currentView==='later' && game.eggs.some(e=>e.startedAt))render();},1000);
+document.addEventListener("visibilitychange",()=>{ if(document.hidden) save(); else {advanceCoins(); updateLiveLabels();} syncCrowdAudio(); });
 if ("serviceWorker" in navigator) window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
