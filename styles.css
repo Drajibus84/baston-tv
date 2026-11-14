@@ -248,3 +248,94 @@
 /* v0.13 adjustments */
 .bag-cable{left:50%;transform:translateX(-50%);}
 .shop-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.shop-item{border:2px solid #d9c2f5;border-radius:16px;padding:12px;background:linear-gradient(180deg,#fff,#f4ebff);display:flex;flex-direction:column;gap:6px;align-items:flex-start}.shop-item b{font-size:18px;color:#4a1a90}.shop-item.premium{border-color:#f4c94d;background:linear-gradient(180deg,#fff8db,#fff0c0)}.shop-item .egg-button{width:100%;margin-top:auto}@media(max-width:430px){.shop-grid{grid-template-columns:1fr}}
+
+/* v0.14 — Protéines et arène de précision. */
+.protein-shop{border-color:#a0c5e3;background:linear-gradient(180deg,#f2fcff,#e4eeff)}
+.protein-panel{border-color:#f2d293;background:linear-gradient(180deg,#fffdf5,#fff5db)}
+.protein-label{display:block;font-size:13px;font-weight:900;color:#542185;margin:12px 0 6px}
+.protein-select{display:block;max-width:100%;width:100%;font:inherit;font-size:14px;padding:12px;background:white;border:2px solid #d2aeea;color:#351453;border-radius:12px}
+.combat-timing-panel{padding:14px 12px;border-color:#7e3fc4;background:linear-gradient(180deg,#fffbff,#f4eaff)}
+.combat-timing-title{display:flex;align-items:center;justify-content:space-between;gap:7px;color:#3d167d;font-size:16px}
+.combat-timing-title strong{font-weight:1000}
+.combat-timing-title span{font-size:12px;font-weight:900;white-space:nowrap;color:#8457a8}
+.combat-gauge-hint{font-size:12px;line-height:1.4;color:#6d5186;margin:8px 0 10px}
+.combat-defense-best{font-size:12px;font-weight:800;background:#e6f7ff;padding:7px;border-radius:9px;color:#20739b}
+.combat-meter{height:38px;border:3px solid #392257;background:#fff;display:flex;overflow:visible;position:relative;border-radius:11px;margin:13px 5px 8px 0;box-shadow:0 3px 0 #d9bff2}
+.combat-meter-zone{display:block;height:100%;border-right:2px solid #39184e55}
+.combat-meter-zone.zone-0{background:linear-gradient(#f3f1fa,#bab6ce)}
+.combat-meter-zone.zone-1{background:linear-gradient(#b1ffa2,#31c864)}
+.combat-meter-zone.zone-2{background:linear-gradient(#acebff,#3c8bff)}
+.combat-meter-zone.zone-3{background:linear-gradient(#ffb7a5,#ec4661);border-right:0}
+.combat-meter-needle{position:absolute;z-index:2;top:-11px;height:51px;width:5px;border-radius:4px;background:#16112c;transform:translateX(-50%);box-shadow:0 0 0 2px white,0 2px 7px #1711338e;pointer-events:none}
+.combat-meter-needle::after{content:'▼';position:absolute;color:#15112b;top:-14px;left:50%;font-size:14px;transform:translateX(-50%)}
+.combat-meter-legend{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;text-align:center;font-size:10px;font-weight:900;color:#5c4777;margin:10px 0}
+.combat-stop-button{font-size:19px;padding:15px 10px;margin-top:12px;min-height:62px;touch-action:manipulation}
+.combat-single-pass{text-align:center;margin-top:6px}
+.combat-waiting{background:#f6edff;color:#6c439c;padding:12px;border-radius:13px;text-align:center;font-weight:850;font-size:14px}
+.fight-speed-banner{display:flex;justify-content:space-between;gap:5px;font-size:11px;color:#5e2c97;font-weight:900;background:#e9dcff;padding:9px;border-radius:11px;margin:12px 0 6px}
+.fight-speed-banner span{max-width:49%}
+.combat-dev-tests{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.combat-dev-tests>small{grid-column:span 2;font-weight:800;color:#76638a}
+.combat-dev-tests .action{font-size:12px;padding:9px 6px;margin:0}
+.fight-style-preview{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:relative;width:100%;height:100%;padding-bottom:14px;filter:drop-shadow(0 9px 2px #130c3540)}
+.fight-style-preview span{font-size:clamp(60px,22vw,113px);line-height:1;filter:drop-shadow(0 3px 1px #24114b75)}
+.fight-style-preview small{font-weight:1000;font-size:13px;text-transform:uppercase;background:#30145d;color:white;padding:3px 8px;border:2px solid #ffe566;border-radius:12px;white-space:nowrap}
+.fight-style-preview.sumo span{transform:scale(1.12)}
+.fight-style-preview.ninja{transform:rotate(-3deg)}
+.fight-actor.enemy-actor .fight-style-preview{transform:scaleX(-1)}
+.fight-actor.enemy-actor .fight-style-preview.ninja{transform:scaleX(-1) rotate(3deg)}
+@media(max-width:365px){.combat-timing-panel{padding:12px 8px}.combat-meter-legend{font-size:9px;gap:1px}.fight-style-preview small{font-size:10px}.fight-speed-banner{font-size:10px}}
+
+/* Sumo de démonstration : caricature CSS sans art définitif. */
+.fight-style-preview.sumo{transform:none;}
+.sumo-doodle{height:165px;width:150px;position:relative;display:flex;align-items:center;flex-direction:column;justify-content:flex-end;filter:drop-shadow(0 8px 2px #1e124451)}
+.fight-style-preview .sumo-doodle .sumo-face{position:relative;z-index:4;font-size:47px;line-height:1.1;transform:translateY(17px);}
+.sumo-body{height:102px;width:112px;border-radius:55% 55% 45% 45%;border:4px solid #6d3544;background:radial-gradient(ellipse at 33% 22%,#ffe6b9 0,#efb177 55%,#c37658 100%);position:relative;z-index:3;box-shadow:inset -8px -8px 0 #8f4f4333}
+.sumo-body::before,.sumo-body::after{content:'';position:absolute;width:27px;height:61px;border:3px solid #763951;border-radius:20px;background:#efb177;top:14px;z-index:-1;}
+.sumo-body::before{left:-22px;transform:rotate(24deg)}.sumo-body::after{right:-22px;transform:rotate(-24deg)}
+.fight-style-preview .sumo-body .sumo-belt{position:absolute;display:block;width:100%;height:28px;bottom:-1px;left:0;background:linear-gradient(#f8fcff,#f4f7ff 50%,#c3d6ea);border-radius:5px 5px 38px 38px;border-top:4px solid #644076;font-size:0}
+.sumo-feet{position:absolute;bottom:-2px;width:89px;height:21px;border-radius:10px;background:#603c63;box-shadow:-30px 0 0 #603c63;z-index:2}
+.fight-actor.enemy-actor .fight-style-preview.sumo{transform:scaleX(-1)}
+@media(max-width:380px){.sumo-doodle{transform:scale(.83);transform-origin:bottom center}}
+
+
+/* v0.15 — sac suspendu : corde et sac pivotent autour du même point fixe. */
+.bag-swing{position:relative;z-index:3;flex:0 0 auto;width:min(54%,215px);height:315px;transform-origin:50% 0;}
+.bag-swing .bag-cable{left:50%;top:0;height:46px;width:9px;transform:translateX(-50%);z-index:1;}
+.bag-swing .bag{position:absolute;top:31px;left:0;width:100%;height:284px;margin-top:0;z-index:2;}
+.bag-swing.bag-swing-hit{animation:bag-rope-pendulum .75s ease-out both;}
+@keyframes bag-rope-pendulum{
+  0%{transform:rotate(0)}
+  17%{transform:rotate(-6deg)}
+  37%{transform:rotate(5deg)}
+  60%{transform:rotate(-2.6deg)}
+  83%{transform:rotate(1.2deg)}
+  100%{transform:rotate(0)}
+}
+/* Bouton prioritaire : juste après l'illustration du sac. */
+.gym-start-cta{margin:13px 0 2px;min-height:53px;}
+.gym-start-cta + .gym-choice-panel{margin-top:15px;}
+/* v0.15 — petites bagarres de studio, uniquement décoratives. */
+.tv-stage .on-air{isolation:isolate;}
+.tv-stage .fighter-onair{position:relative;}
+.tv-actor{position:relative;height:130px;display:flex;align-items:flex-end;justify-content:center;animation:tv-gentle-bob 1.55s ease-in-out infinite alternate;transform-origin:50% 95%;}
+.tv-actor img{display:block;width:100%;height:100%;object-fit:contain;object-position:center bottom;}
+.tv-fighter-2 .tv-actor img{transform:scaleX(-1);}
+.tv-fighter-2 .tv-actor{animation-delay:-.7s;}
+.tv-fighter-1.tv-strike .tv-actor{animation:tv-left-jab .6s ease-out both;}
+.tv-fighter-2.tv-strike .tv-actor{animation:tv-right-jab .6s ease-out both;}
+.tv-fighter-1.tv-flinch .tv-actor{animation:tv-left-flinch .6s ease-out both;}
+.tv-fighter-2.tv-flinch .tv-actor{animation:tv-right-flinch .6s ease-out both;}
+@keyframes tv-gentle-bob{0%{transform:translateY(2px) rotate(-1deg)}100%{transform:translateY(-3px) rotate(1deg)}}
+@keyframes tv-left-jab{0%,100%{transform:translateX(0)}35%{transform:translateX(17px) rotate(5deg)}65%{transform:translateX(9px)}}
+@keyframes tv-right-jab{0%,100%{transform:translateX(0)}35%{transform:translateX(-17px) rotate(-5deg)}65%{transform:translateX(-9px)}}
+@keyframes tv-left-flinch{0%,100%{transform:translateX(0)}35%{transform:translateX(-11px) rotate(-5deg)}65%{transform:translateX(-4px)}}
+@keyframes tv-right-flinch{0%,100%{transform:translateX(0)}35%{transform:translateX(11px) rotate(5deg)}65%{transform:translateX(4px)}}
+.tv-pow{position:absolute;left:50%;top:43%;z-index:6;pointer-events:none;transform:translate(-50%,-50%) rotate(-9deg);font-weight:1000;font-size:clamp(21px,6vw,33px);color:#ffe658;-webkit-text-stroke:1px #3f1764;text-shadow:2px 3px #2e125a;white-space:nowrap;animation:tv-pow-appear .65s ease-out both;}
+@keyframes tv-pow-appear{0%{opacity:0;transform:translate(-50%,-50%) scale(.5) rotate(-15deg)}23%{opacity:1;transform:translate(-50%,-68%) scale(1.2) rotate(5deg)}100%{opacity:0;transform:translate(-50%,-105%) scale(1) rotate(-5deg)}}
+/* Jauge de précision : aiguille plus fine, bord blanc lisible. */
+.combat-meter-needle{width:2px;top:-11px;height:51px;border-radius:1px;box-shadow:0 0 0 1px #fff,0 1px 4px #14112b;}
+.combat-meter-needle::after{font-size:12px;top:-14px;}
+@media(prefers-reduced-motion:reduce){
+ .bag-swing.bag-swing-hit,.tv-actor,.tv-strike .tv-actor,.tv-flinch .tv-actor,.tv-pow{animation:none!important}
+}

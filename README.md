@@ -1,30 +1,25 @@
-# Baston TV — prototype 0.13
-
-Jeu PWA en HTML/CSS/JavaScript, jouable dans un navigateur et installable depuis GitHub Pages.
-
-## Nouveautés de la version 0.13
-
-- **6 stades** pour les Bourrins : Bébé Bourrin (nouvelle illustration), Paumé, Balourd, Cogneur, Titan, Quadri-Poings (effet de gants provisoire pour la dernière forme).
-- **Sauvegardes v0.11 migrées automatiquement** : les anciens personnages gardent une apparence équivalente ; le niveau 5 « Mastodonte » provisoire devient un Titan niveau 5.
-- **Entraînement plus exigeant** : moins de 3 touches = 0 équipement ; 3 à 7 = 1 ; 8 ou plus = 2. Un combo d'au moins 8 sans faute offre un bonus, un combo de 13 sans faute offre un second bonus (4 maximum).
-- **Fini les œufs quotidiens** : un œuf toutes les sept victoires, à récupérer depuis l'incubateur. Les outils de test des œufs sont réservés au mode développeur.
-- **Paramètres** en haut : volumes séparés pour menus et effets ; futur volume musical mémorisé, mais pas de bande-son pour le moment.
-- **Codes** : `Test0.13` donne 100 gemmes une fois par navigateur ; `DEV0.13` active le mode développeur (ajouts de gemmes/pièces et œufs de test).
-- **Réinitialiser la partie** : deux confirmations obligatoires, dont la saisie exacte `REINITIALISER`.
-
-## Démarrer en local
-
-1. Décompresser le ZIP puis ouvrir le dossier avec Visual Studio Code.
-2. Installer l'extension Live Server si nécessaire.
-3. Clic droit sur `index.html` → **Open with Live Server**.
+# Baston TV — Prototype v0.15
 
 ## Publier sur GitHub Pages
 
-Décompresser le ZIP GitHub Pages (fichiers à la racine) puis envoyer tous les fichiers et le dossier `assets/` dans ton dépôt `baston-tv` via **Add file → Upload files**, sans envoyer le ZIP. Vérifier **Settings → Pages → Deploy from a branch → main / (root)**. Attendre la fin du déploiement dans Actions.
+1. Décompresser l’archive GitHub (ne pas envoyer le ZIP lui-même).
+2. Ouvrir le dépôt `Drajibus84/baston-tv` → **Add file → Upload files**.
+3. Déposer **tous les fichiers à la racine**, avec le dossier `assets/` entier (notamment `index.html`, `app.js`, `styles.css`, `sw.js`).
+4. **Commit changes**, vérifier le déploiement dans **Actions**.
+5. Sur le téléphone, fermer complètement Baston TV, puis rouvrir. Si l'ancienne version subsiste, vérifier la version dans le navigateur avant de réessayer.
 
-## Précautions
+**Ne pas désinstaller l’application ni vider ses données**, car la collection est enregistrée localement dans le navigateur.
 
-- Le jeu ne possède pas de serveur : les sauvegardes et les codes sont locaux à chaque navigateur/appareil.
-- Les codes sont présents dans le JavaScript public : **ne pas les considérer comme secrets ou sécurisés**. Désactiver le mode développeur et retirer son code pour une vraie sortie publique.
-- Réinitialiser le compte efface la progression locale, mais ne remet pas à zéro les codes cadeaux déjà utilisés sur cet appareil.
-- Le réglage « musique » est prévu mais aucun fichier musical n'est joué en v0.13.
+## Nouveautés v0.15
+
+- Sac et corde regroupés dans un pendule : ils oscillent **ensemble** lorsqu’on frappe une cible.
+- Bouton **Commencer la séance** directement **en dessous du sac**, avant le choix de l’accompagnateur. Les prix et les résultats restent accessibles en défilant.
+- Carte **Protéine d’évolution** déplacée sous la carte « Équipements de boxe / Recruter » dans les vestiaires.
+- TV de l’accueil : les deux combattants se font face et s’échangent des petits coups avec « POW ! », « BAM ! », « TCHAK ! », « PAF ! ». Aucun dégât, son ni impact économique.
+- Jauges de combat 10 % plus rapides et aiguille plus fine.
+- Protection bleue abaissée de **100 % à 90 %** ; les attaques non ratées infligent toujours au moins **1 point de dégâts** même en cas de très bonne parade.
+- Compatibilité conservée avec les sauvegardes de la v0.14 (`bastontv-save-v03`), les pièces, gemmes, œufs, shinies, protéines et codes déjà utilisés.
+
+## Jouer hors ligne
+
+Serveur local VS Code / Live Server ou GitHub Pages. Le fichier `sw.js` utilise désormais le cache `baston-tv-v015`.

@@ -1,8 +1,8 @@
-/* Baston TV — Prototype 0.13. Aucun framework, ni serveur, ni compte requis. */
+/* Baston TV — Prototype 0.15. Aucun framework, ni serveur, ni compte requis. */
 "use strict";
 
 const SAVE_KEY = "bastontv-save-v03";
-const VERSION_LABEL = "0.13";
+const VERSION_LABEL = "0.15";
 const BASE_TRAINING_COST = 100;
 const TRAINING_INCREASE_EVERY = 3;
 const TRAINING_INCREASE_AMOUNT = 20;
@@ -23,6 +23,7 @@ const GEM_ACCEL_MS = 30 * 60_000;
 const WINS_PER_EGG = 7;
 const SHOP_NORMAL_EGG_GEMS = 35;
 const SHOP_SHINY_EGG_GEMS = 75;
+const PROTEIN_PRICE_GEMS = 500;
 const SHOP_FREE_EGG_COOLDOWN_MS = 24 * 60 * 60_000;
 const STUDIO_MAX_LEVEL = 5;
 const STUDIO_UPGRADE_COSTS = {1: 350, 2: 950, 3: 2400, 4: 6200};
@@ -69,9 +70,10 @@ function freshSave() {
     gymCompanionId: null,
     eggs: [],
     shinyAlbum: {},
-    schemaVersion: 13,
+    schemaVersion: 15,
     devMode: false,
-    nextFreeShopEggAt: 0
+    nextFreeShopEggAt: 0,
+    proteins: 0
   };
 }
 function loadSave() {
@@ -103,8 +105,12 @@ if ((game.schemaVersion || 0) < 12) {
 if ((game.schemaVersion || 0) < 13) {
   game.schemaVersion = 13;
 }
+if ((game.schemaVersion || 0) < 14) game.schemaVersion = 14;
+// v0.15 n'altère pas les personnages, les ressources ou les séries de victoires.
+if ((game.schemaVersion || 0) < 15) game.schemaVersion = 15;
 game.fighters.forEach(f => { f.shiny = Boolean(f.shiny); });
 if (typeof game.devMode !== 'boolean') game.devMode = false;
+if (!Number.isSafeInteger(game.proteins) || game.proteins < 0) game.proteins = 0;
 if (!Number.isFinite(game.nextFreeShopEggAt) || game.nextFreeShopEggAt < 0) game.nextFreeShopEggAt = 0;
 if (!Array.isArray(game.eggs)) game.eggs = [];
 if (!Number.isFinite(game.sessions) || game.sessions < 0) game.sessions = 0;
@@ -419,6 +425,30 @@ function tickAudience() {
   if (change) { change.textContent = viewerDelta > 0 ? `▲ +${viewerDelta}` : viewerDelta < 0 ? `▼ ${viewerDelta}` : '• 0'; change.className = 'viewers-change ' + (viewerDelta >= 0 ? 'up' : 'down'); }
 }
 
+// Petits affrontements TV purement décoratifs : aucun dégât, aucune récompense,
+// aucun son automatique et aucun changement de sauvegarde.
+let tvPunchIndex=0;
+function animateStudioTV() {
+  if (document.hidden || currentView!=='home') return;
+  const stage=document.querySelector('.tv-stage');
+  const fighters=stage?.querySelectorAll('.on-air .fighter-onair');
+  if (!stage || !fighters || fighters.length<2) return;
+  const attackerIndex=tvPunchIndex++%2;
+  const attacker=fighters[attackerIndex];
+  const defender=fighters[1-attackerIndex];
+  attacker.classList.remove('tv-strike');
+  defender.classList.remove('tv-flinch');
+  void attacker.offsetWidth;
+  attacker.classList.add('tv-strike');
+  defender.classList.add('tv-flinch');
+  const bubble=document.createElement('span');
+  bubble.className='tv-pow';
+  bubble.textContent=['POW !','BAM !','TCHAK !','PAF !'][(tvPunchIndex-1)%4];
+  bubble.setAttribute('aria-hidden','true');
+  stage.appendChild(bubble);
+  setTimeout(()=>{attacker.classList.remove('tv-strike');defender.classList.remove('tv-flinch');bubble.remove();},650);
+}
+
 function fighterTile(fighter) {
   const info = LEVELS[fighter.level];
   return `<div class="fighter-card"><img src="${imageFor(fighter.level)}" alt="${info.name}"><b>${info.name}</b><small>Évolution ${fighter.level} · +${info.income} pièces/min</small></div>`;
@@ -432,7 +462,7 @@ function homeScreen() {
     <div class="tv-stage" aria-label="Boxe TV en direct">
       <span class="live-label">● EN DIRECT</span>
       <div class="viewers-live" aria-label="Audience simulée en direct">👥 <b id="viewers-live">${format(currentAudience())}</b> <small id="viewers-change" class="viewers-change up">• 0</small></div><div class="stage-logo">BASTON <span>TV</span></div>
-      <div class="on-air">${onAir.map(f => `<div class="fighter-onair ${f.shiny?'shiny-fighter':''}${evolutionClass(f.level)}"><img class="breathing" src="${imageFor(f.level)}" alt="${LEVELS[f.level].name}${f.shiny?' shiny':''}">${evolutionDecoration(f.level)}<strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong></div>`).join("")}
+      <div class="on-air">${onAir.map((f,i) => `<div class="fighter-onair tv-fighter-${i+1} ${f.shiny?'shiny-fighter':''}${evolutionClass(f.level)}"><div class="tv-actor"><img src="${imageFor(f.level)}" alt="${LEVELS[f.level].name}${f.shiny?' shiny':''}">${evolutionDecoration(f.level)}</div><strong>${f.shiny?'✨ ':''}${LEVELS[f.level].name}</strong></div>`).join("")}
       ${onAir.length < 2 ? '<div class="empty-slot">Place libre</div>' : ''}</div>
     </div>
     <div class="stat-grid"><div class="stat"><small>📈 Revenus TV</small><b id="rate-live">+${format(incomePerMinute())}/min</b><small>En jeu et hors ligne (8 h max.)</small></div>
@@ -462,18 +492,18 @@ function gymScreen() {
   if (training) return `<span class="kicker">🥊 Entraînement en cours</span><h1 class="h1">Frappe les points faibles !</h1>
     <div class="train-stat"><span>⏱ <span id="training-timer">20,0</span> s</span><span>⭐ <span id="training-hits">0</span> touches</span><span>🔥 <span id="training-combo">0</span></span><span>❌ <span id="training-misses">0</span></span></div>
     <div class="progress"><span id="training-progress" style="width:100%"></span></div>
-    <div class="bag-arena" id="bag-arena" style="margin-top:12px"><span class="gym-status" id="gym-status">Vise la cible !</span><div class="bag-cable"></div>${gymCompanionHtml(training.companion || companion)}<div class="bag" id="bag"><button class="spot" id="spot" data-action="hit" aria-label="Frapper le point faible" style="left:50%;top:45%"></button></div></div>
+    <div class="bag-arena" id="bag-arena" style="margin-top:12px"><span class="gym-status" id="gym-status">Vise la cible !</span>${gymCompanionHtml(training.companion || companion)}<div class="bag-swing" id="bag-swing"><div class="bag-cable" aria-hidden="true"></div><div class="bag" id="bag"><button class="spot" id="spot" data-action="hit" aria-label="Frapper le point faible" style="left:50%;top:45%"></button></div></div></div>
     <p class="muted">Le point faible change de place. Si tu rates ou si tu cliques à côté, tu perds du temps !</p>
     <p class="subnote">⏳ Cible expirée : −0,7 s · Mauvais clic : −0,5 s · 5 touches de suite = bonus</p>`;
   const result = latestReward ? `<section class="card"><h2>🎁 Dernière séance</h2><p class="muted">${latestReward.hits} point(s) touché(s) · meilleur combo : ${latestReward.best} · erreurs : ${latestReward.misses}</p><div class="reward-list">${latestReward.items.length?latestReward.items.map(id => `<span class="reward-bubble">${EQUIPMENT.find(x => x.id === id).icon} ${EQUIPMENT.find(x => x.id === id).label}</span>`).join(""):'<span class="reward-empty">Aucun équipement cette fois. Tu feras mieux au prochain essai !</span>'}</div></section>` : "";
   return `<span class="kicker">🎯 Les coulisses</span><h1 class="h1">Salle d'entraînement</h1>
     <p class="muted">Les points faibles sont plus espacés. Il faut être rapide et précis : les erreurs te font perdre du temps.</p>
-    <div class="bag-arena"><div class="bag-cable"></div>${gymCompanionHtml(companion)}<div class="bag"><div class="spot" style="left:49%;top:34%;pointer-events:none"></div></div></div>
+    <div class="bag-arena">${gymCompanionHtml(companion)}<div class="bag-swing"><div class="bag-cable" aria-hidden="true"></div><div class="bag"><div class="spot" style="left:49%;top:34%;pointer-events:none"></div></div></div></div>
+    <button class="action gym-start-cta" type="button" data-action="start-training" ${Math.floor(game.coins) < trainingCost() ? "disabled" : ""}>🥊 Commencer la séance · ${format(trainingCost())} 🪙</button>
+    ${Math.floor(game.coins) < trainingCost() ? '<p class="subnote">Pas assez de pièces. Laisse ta chaîne en produire un peu, puis reviens !</p>' : ''}
     ${gymRosterHtml(companion)}
     <div class="stat-grid"><div class="stat"><small>⏱ Durée</small><b>20 s</b></div><div class="stat"><small>🪙 Prix actuel</small><b>${format(trainingCost())}</b></div></div>
     <p class="subnote">Le prix augmente de 20 pièces toutes les 3 séances, puis de 30 pièces supplémentaires à chaque nouvelle évolution au-delà du niveau 2.</p>
-    <button class="action" type="button" data-action="start-training" ${Math.floor(game.coins) < trainingCost() ? "disabled" : ""}>🥊 Commencer la séance · ${format(trainingCost())} 🪙</button>
-    ${Math.floor(game.coins) < trainingCost() ? '<p class="subnote">Pas assez de pièces. Laisse ta chaîne en produire un peu, puis reviens !</p>' : ''}
     ${result}
     <div class="tip"><strong>Récompenses :</strong> 0 équipement pour un score très faible ; sinon 1 à 2. Tu peux gagner jusqu'à 4 équipements si tu réalises un excellent combo <b>sans aucune faute</b>. Chaque faute retire du temps et brise le combo.</div>`;
 }
@@ -508,7 +538,17 @@ function collectionScreen() {
       </div>${rest>0?`<p class="subnote">${rest} autre(s) combattant(s) en réserve. Les 16 premiers sont affichés.</p>`:''}
       <p class="subnote" id="locker-instruction">Normal + normal → normal · Shiny + shiny → shiny. Les mélanges sont impossibles.</p></section>
     <section class="card"><h2>🎁 Équipements de boxe</h2><div class="eq-grid">${EQUIPMENT.map(item => `<div class="eq-item ${game.equipment[item.id] > 0 ? 'ready' : ''}"><span>${item.icon} ${item.label}</span><b>×${game.equipment[item.id]}</b></div>`).join('')}</div>
-    <button class="action" type="button" data-action="recruit" ${ready ? '' : 'disabled'}>✨ Recruter un Bébé Bourrin</button><p class="subnote">Consomme un exemplaire de chacun des quatre équipements.</p></section>`;
+    <button class="action" type="button" data-action="recruit" ${ready ? '' : 'disabled'}>✨ Recruter un Bébé Bourrin</button><p class="subnote">Consomme un exemplaire de chacun des quatre équipements.</p></section>
+    <section class="card protein-panel"><h2>🥤 Protéine d'évolution</h2>
+      <p class="muted">Tu possèdes <b>${game.proteins} protéine(s)</b>. Une seule suffit pour faire passer <b>n'importe quel combattant</b> au niveau suivant, même shiny. Pas de fusion nécessaire !</p>
+      <label for="protein-fighter" class="protein-label">Choisir le bénéficiaire</label>
+      <select id="protein-fighter" class="protein-select" ${!game.proteins?'disabled':''}>
+        ${[...game.fighters].filter(f=>f.level<MAX_FIGHTER_LEVEL).sort((a,b)=>b.level-a.level||Number(b.shiny)-Number(a.shiny)).map(f=>`<option value="${f.id}">${f.shiny?'✨ Shiny · ':''}${LEVELS[f.level].name} (niv. ${f.level} → ${f.level+1}) · ${f.id.slice(-4)}</option>`).join('')}
+      </select>
+      <button class="action pink" type="button" data-action="use-protein" ${!game.proteins||game.fighters.every(f=>f.level>=MAX_FIGHTER_LEVEL)?'disabled':''}>🥤 Utiliser une protéine</button>
+      <p class="subnote">Ce bonus est surtout intéressant pour les combattants de haut niveau. Disponible à la boutique pour 500 💎. Un niveau 6 ne peut plus évoluer.</p>
+    </section>
+    `;
 }
 
 // Fusion au glisser-déposer, compatible avec la souris ET le tactile.
@@ -626,11 +666,12 @@ function laterScreen() {
         <div class="shop-item"><strong>🎁 Œuf gratuit</strong><small>Réclamable toutes les 24 h</small><b>${freeReady ? 'Disponible !' : readableDuration(freeRemaining)}</b><button class="egg-button" data-action="claim-free-shop-egg" ${freeReady && game.eggs.length < EGG_CAP ? '' : 'disabled'}>${game.eggs.length >= EGG_CAP ? 'Stock plein' : freeReady ? 'Réclamer' : 'Patiente…'}</button></div>
         <div class="shop-item"><strong>🥚 Œuf normal</strong><small>Chance shiny : 30 % à l’incubation</small><b>💎 ${SHOP_NORMAL_EGG_GEMS}</b><button class="egg-button" data-action="buy-egg" data-kind="normal" ${game.gems >= SHOP_NORMAL_EGG_GEMS && game.eggs.length < EGG_CAP ? '' : 'disabled'}>Acheter</button></div>
         <div class="shop-item premium"><strong>✨ Œuf shiny garanti</strong><small>Shiny assuré à l’incubation</small><b>💎 ${SHOP_SHINY_EGG_GEMS}</b><button class="egg-button egg-gems-button" data-action="buy-egg" data-kind="shiny" ${game.gems >= SHOP_SHINY_EGG_GEMS && game.eggs.length < EGG_CAP ? '' : 'disabled'}>Acheter</button></div>
+        <div class="shop-item protein-shop"><strong>🥤 Protéine d'évolution</strong><small>Fait monter 1 combattant de 1 niveau, shiny compris.</small><b>💎 ${PROTEIN_PRICE_GEMS}</b><button class="egg-button" data-action="buy-protein" ${game.gems >= PROTEIN_PRICE_GEMS ? '' : 'disabled'}>Acheter</button></div>
       </div>
-      <p class="subnote">Stock maximum : ${EGG_CAP} œufs. Un seul œuf peut incuber en même temps.</p>
+      <p class="subnote">Protéines en réserve : <b>${game.proteins}</b> · Utilisation dans les Vestiaires. Les protéines ne prennent pas de place dans le stock d’œufs.</p><p class="subnote">Stock maximum : ${EGG_CAP} œufs. Un seul œuf peut incuber en même temps.</p>
     </section>
     <section class="card"><h2>🏆 Récompenses de combat</h2>
-      <p class="muted">Tous les <b>${WINS_PER_EGG} duels remportés</b> : un œuf à récupérer. Victoires totales : <b>${game.combatWins}</b> · Encore <b>${WINS_PER_EGG-(game.combatWins%WINS_PER_EGG || WINS_PER_EGG)}</b> victoire(s) avant le prochain.</p>
+      <p class="muted">Tous les <b>${WINS_PER_EGG} duels remportés</b> : un œuf à récupérer. Victoires totales : <b>${game.combatWins}</b> · Encore <b>${WINS_PER_EGG-(game.combatWins%WINS_PER_EGG)}</b> victoire(s) avant le prochain.</p>
       <p class="muted">Récompenses disponibles : <b>${game.pendingCombatEggs}</b> · Stock : <b>${game.eggs.length}/${EGG_CAP}</b> œufs.</p>
       <button class="action secondary" data-action="claim-combat-egg" ${game.pendingCombatEggs>0 && game.eggs.length<EGG_CAP?'':'disabled'}>🥚 Récupérer un œuf de combat</button>
     </section>
@@ -704,6 +745,28 @@ function buyEgg(kind='normal') {
   game.eggs.push({id:getNewId(),startedAt:null,guaranteedShiny,source:'shop'});
   playSound('confirm'); save(); render(); showToast(guaranteedShiny ? '✨ Œuf shiny garanti acheté !' : '🥚 Œuf normal acheté !');
 }
+function buyProtein() {
+  if (game.gems < PROTEIN_PRICE_GEMS) return showToast('Il te faut 500 gemmes pour une protéine.');
+  game.gems -= PROTEIN_PRICE_GEMS;
+  game.proteins++;
+  playSound('confirm'); save(); render();
+  showToast('🥤 Protéine achetée ! Choisis ton combattant dans les Vestiaires.');
+}
+function useProtein() {
+  if (!game.proteins) return showToast('Tu ne possèdes pas de protéine.');
+  const id=document.getElementById('protein-fighter')?.value;
+  const fighter=game.fighters.find(f=>f.id===id);
+  if (!fighter) return showToast('Choisis un combattant valide.');
+  if (fighter.level >= MAX_FIGHTER_LEVEL) return showToast('Ce combattant est déjà au niveau 6.');
+  const before=LEVELS[fighter.level].name, after=LEVELS[fighter.level+1].name;
+  if (!window.confirm(`Utiliser 1 protéine sur ${before}${fighter.shiny?' ✨ shiny':''} ? Il deviendra ${after}, sans utiliser de deuxième combattant.`)) return;
+  fighter.level++;
+  game.proteins--;
+  if (fighter.shiny) game.shinyAlbum[fighter.level]=true;
+  clearLockerSelection();
+  playSound('recruit'); save(); render();
+  showToast(`🥤 Évolution réussie : ${after}${fighter.shiny?' ✨ shiny':''} !`);
+}
 function accelerateEggTest(id) {
   if (!game.devMode) return;
   const egg=game.eggs.find(e=>e.id===id);
@@ -712,142 +775,322 @@ function accelerateEggTest(id) {
   egg.startedAt=now() - (elapsed < EGG_NORMAL_MS ? EGG_NORMAL_MS+1000 : EGG_SHINY_MS+1000);
   save();render();showToast(eggState(egg)==='glowing'?'🌟 Surprise : cet œuf est shiny !':'🥚 Éclosion prête !');
 }
-// Première arène de démonstration : un boxeur, deux attaques animées, un adversaire.
-// Ce n'est pas encore le vrai championnat 3 contre 3.
+// Combats Baston TV : nouvelle mécanique à timing (une seule traversée par jauge).
+// Les familles Ninja et Sumo sont pour l'instant jouables seulement en démonstration
+// développeur. Les illustrations de famille restent à dessiner.
+const FIGHT_FAMILIES = {
+  boxe: {name:'Bourrins', emoji:'🥊', speed:10, speedPerLevel:2.4, hp:1, attack:1, strikes:1, parries:1, gaugeMs:1760, attackZones:[53,78,85], defenseZones:[54,78,85]},
+  ninja: {name:'Ninjas', emoji:'🥷', speed:19, speedPerLevel:3.2, hp:.82, attack:.71, strikes:2, parries:1, gaugeMs:1540, attackZones:[50,77,84], defenseZones:[52,77,84]},
+  sumo: {name:'Sumos', emoji:'🥋', speed:5, speedPerLevel:1.6, hp:1.5, attack:.9, strikes:1, parries:2, gaugeMs:2070, attackZones:[56,80,87], defenseZones:[56,80,87]}
+};
+const ATTACK_MULTIPLIERS = [0.5,1,1.75,0];
+const DEFENSE_MULTIPLIERS = [0.25,0.5,0.90,0];
+let lastOpponentFamily = null;
+let combatFrame = 0;
+const combatTimeouts = new Set();
+function cancelCombatTimers() {
+  if (combatFrame) cancelAnimationFrame(combatFrame);
+  combatFrame = 0;
+  for (const handle of combatTimeouts) clearTimeout(handle);
+  combatTimeouts.clear();
+}
+function combatLater(callback, ms) {
+  const handle=setTimeout(()=>{combatTimeouts.delete(handle);callback();},ms);
+  combatTimeouts.add(handle);
+}
+function fighterStats(family, level) {
+  const style=FIGHT_FAMILIES[family] || FIGHT_FAMILIES.boxe;
+  return {
+    hp:Math.round((83+level*27)*style.hp),
+    speed:Math.round(style.speed+level*style.speedPerLevel),
+    attack:Math.round((11+level*8)*style.attack),
+    strikes:style.strikes, parries:style.parries
+  };
+}
+function chooseDuelOpponent(playerLevel) {
+  const available=['boxe','ninja','sumo'].filter(type=>type!==lastOpponentFamily);
+  const family=available[Math.floor(Math.random()*available.length)];
+  lastOpponentFamily=family;
+  const level=Math.max(1,Math.min(MAX_FIGHTER_LEVEL,playerLevel+[-1,0,0,1][Math.floor(Math.random()*4)]));
+  const names={boxe:OPPONENT_NAMES,ninja:['Ombre Éclair','Kiko l’Invisible','Ninja du Direct'],sumo:['Tonton Tatami','Gros Nuage','Sumo Tonnerre']};
+  return {family,level,name:names[family][Math.floor(Math.random()*names[family].length)]};
+}
+function familyVisual(family, level, side) {
+  if (family==='boxe') return `<img class="breathing" src="${imageFor(level)}" alt="Boxeur de la famille Bourrins">${evolutionDecoration(level)}`;
+  if (family==='sumo') return `<div class="fight-style-preview sumo" role="img" aria-label="Personnage sumo provisoire"><div class="sumo-doodle"><span class="sumo-face">😤</span><div class="sumo-body"><span class="sumo-belt"></span></div><div class="sumo-feet"></div></div><small>SUMOS</small></div>`;
+  return `<div class="fight-style-preview ninja" role="img" aria-label="Personnage ninja provisoire"><span>🥷</span><small>NINJAS</small></div>`;
+}
+function combatGaugeHtml() {
+  const gauge=duel?.gauge;
+  if (!gauge) {
+    const queued=duel?.queuedGauge;
+    if (queued) return `<div class="combat-ready"><h2>${queued.kind==='attack'?'🥊 Prépare ta frappe !':'🛡️ Prépare ta défense !'}</h2>
+      <p class="muted">Appuie sur PRÊT quand tu es bien installé. Ensuite, la jauge partira de gauche à droite <b>une seule fois</b> : touche le bouton au bon moment.</p>
+      ${queued.kind==='defense'&&FIGHT_FAMILIES[duel.playerFamily].parries>1?`<p class="combat-defense-best">🥋 Parade ${queued.attempt}/${FIGHT_FAMILIES[duel.playerFamily].parries} · Meilleure protection : ${Math.round((duel.bestDefense||0)*100)} %</p>`:''}
+      <div class="combat-meter-legend"><span>⚪ Faible</span><span>🟢 Normal</span><span>🔵 Critique</span><span>🔴 Raté</span></div>
+      <button type="button" class="action secondary combat-ready-button" data-action="combat-ready">🚦 PRÊT !</button></div>`;
+    return `<div class="combat-waiting" aria-live="polite">${duel?.log || 'Préparation du prochain tour…'}</div>`;
+  }
+  const defend=gauge.kind==='defense';
+  const family = defend ? duel.playerFamily : duel.playerFamily;
+  const zones=(defend?FIGHT_FAMILIES[family].defenseZones:FIGHT_FAMILIES[family].attackZones);
+  const [weak,green,blue]=zones;
+  const names = defend ? ['25 %','50 %','90 %','0 %'] : ['50 %','100 %','175 %','0 %'];
+  const labels=defend?['🛡️ Parade légère','🟩 Parade moyenne','🟦 Parade renforcée','🟥 Parade ratée']:['⬜ Coup faible','🟩 Bon coup','🟦 Coup critique','🟥 Coup raté'];
+  const percentages=[weak, green-weak, blue-green, 100-blue];
+  return `<div class="combat-timing-title"><strong>${defend?'🛡️ DÉFENDS-TOI !':'🥊 À TON TOUR !'}</strong><span>${defend ? `Parade ${gauge.attempt}/${gauge.totalAttempts}` : `Frappe ${duel.strikeIndex}/${duel.strikeTotal}`}</span></div>
+    <p class="combat-gauge-hint">${defend?'Arrête la jauge pour réduire les dégâts.':'Arrête la jauge pour attaquer. Si tu dépasses le bleu et arrives au rouge, tu rates !'}</p>
+    ${defend&&gauge.totalAttempts>1?`<p class="combat-defense-best">🥋 Sumo : deux chances de parade · Meilleure protection : ${Math.round((duel.bestDefense||0)*100)} %</p>`:''}
+    <div class="combat-meter" role="progressbar" aria-label="Jauge de ${defend?'défense':'frappe'}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="combat-meter">
+      ${percentages.map((size,index)=>`<span class="combat-meter-zone zone-${index}" style="width:${size}%" title="${labels[index]}"></span>`).join('')}
+      <span class="combat-meter-needle" id="combat-needle" style="left:0%"></span>
+    </div>
+    <div class="combat-meter-legend">${names.map((x,i)=>`<span>${i===0?'⚪':i===1?'🟢':i===2?'🔵':'🔴'} ${x}</span>`).join('')}</div>
+    <button type="button" class="action ${defend?'secondary':'pink'} combat-stop-button" data-action="combat-tap">${defend?'🛡️ PARER !':'🥊 FRAPPER !'}</button>
+    <p class="subnote combat-single-pass">La jauge ne passe qu'une fois. Appuie avant la zone rouge !</p>`;
+}
 function combatScreen() {
-  const fighter = strongestFighters()[0];
-  const level = duel?.level ?? fighter.level;
-  const character = LEVELS[level];
-  if (!duel) return `<span class="kicker">🎬 Plateau de tournage</span><h1 class="h1">Premier combat animé</h1>
-    <p class="muted">Notre toute première arène ! Deux mouvements : les personnages respirent et se balancent, puis avancent pour frapper. Les adversaires réagissent aux coups.</p>
+  const fighter=strongestFighters()[0];
+  if (!duel) return `<span class="kicker">🎬 Arena Baston TV</span><h1 class="h1">Combat au timing !</h1>
+    <p class="muted">Le plus rapide commence. Appuie au bon moment pour frapper ou te défendre. Attention : un coup bleu est puissant, mais une fraction de seconde trop tard = rouge, donc raté !</p>
     <div class="fight-arena fight-preview">
       <div class="ring-glow"></div><div class="ring-floor"></div>
-      <div class="fight-actor player-actor ${fighter.shiny?'shiny-actor':''}${evolutionClass(fighter.level)}"><img class="breathing" src="${imageFor(fighter.level)}" alt="${LEVELS[fighter.level].name}">${evolutionDecoration(fighter.level)}</div>
-      <div class="fight-actor enemy-actor"><img class="breathing" src="${imageFor(duel?.opponent?.level || Math.max(1, Math.min(2, fighter.level)))}" alt="${duel?.opponent?.name || "Adversaire TV"}"></div>
+      <div class="fight-actor player-actor ${fighter.shiny?'shiny-actor':''}${evolutionClass(fighter.level)}">${familyVisual('boxe',fighter.level,'player')}</div>
+      <div class="fight-actor enemy-actor">${familyVisual('ninja',Math.max(1,fighter.level),'enemy')}</div>
       <span class="ring-versus">VS</span>
     </div>
-    <section class="card"><h2>🥊 ${LEVELS[fighter.level].name} contre un adversaire TV aléatoire</h2><p class="muted">Le boxeur le plus évolué de ta collection entre sur le ring. Les dégâts et les points de vie sont simplifiés pour tester les animations, et l’adversaire change d’un duel à l’autre.</p><button type="button" data-action="start-duel" class="action">🎬 Lancer le combat !</button></section>
-    <div class="tip">Tous les 7 duels gagnés : 1 œuf à récupérer dans l’incubateur. Une victoire sur deux donne aussi 2 gemmes. Les équipes de 3 et les championnats arriveront après.</div>`;
-  const end = duel.result !== null;
-  return `<span class="kicker">🥊 Boxe TV · Démo de combat</span><h1 class="h1">${end ? duel.result === 'win' ? 'Victoire ! 🎉' : 'Défaite ! 💥' : 'Sur le ring !'}</h1>
+    <section class="card"><h2>🥊 ${LEVELS[fighter.level].name} contre un adversaire surprise</h2>
+      <p class="muted">Tu joues un Bourrin équilibré. Le ring peut t'opposer un boxeur, un ninja rapide avec deux coups, ou un sumo costaud avec deux parades.</p>
+      <button class="action" type="button" data-action="start-duel" data-family="boxe">⚡ Entrer sur le ring</button>
+      ${game.devMode?`<div class="combat-dev-tests"><small>🧪 Tester les styles avant d'avoir les familles :</small><button class="action secondary" type="button" data-action="start-duel" data-family="ninja">🥷 Jouer Ninja (test)</button><button class="action pink" type="button" data-action="start-duel" data-family="sumo">🥋 Jouer Sumo (test)</button></div>`:''}
+    </section>
+    <div class="tip"><b>Jauge d'attaque :</b> gris = 50 %, vert = 100 %, bleu = 175 %, rouge = 0 %. <b>Jauge de défense :</b> gris = 25 %, vert = 50 %, bleu = 90 %, rouge = 0 %. Tous les 7 combats gagnés, récupère un œuf à la boutique.</div>`;
+  const end=Boolean(duel.result);
+  const playerFamily=FIGHT_FAMILIES[duel.playerFamily];
+  const enemyFamily=FIGHT_FAMILIES[duel.opponent.family];
+  return `<span class="kicker">⚔️ Baston TV · Ring de duel</span><h1 class="h1">${end ? duel.result==='win'?'Victoire ! 🏆':'Défaite ! 💥':'Le choc des familles !'}</h1>
+    <div class="fight-speed-banner"><span>${playerFamily.emoji} ${playerFamily.name} · ⚡ ${duel.playerSpeed}</span><span>${enemyFamily.emoji} ${enemyFamily.name} · ⚡ ${duel.enemySpeed}</span></div>
     <div class="fight-top">
-      <div class="combat-unit"><strong>${character.name}</strong><div class="hpbar"><span id="combat-player-bar" style="width:${100*duel.playerHP/duel.maxPlayerHP}%"></span></div><small id="combat-player-hp">❤️ ${duel.playerHP} / ${duel.maxPlayerHP}</small></div>
+      <div class="combat-unit"><strong>${duel.playerFamily==='boxe'?LEVELS[duel.level].name:playerFamily.name+' (démo)'}</strong><div class="hpbar"><span id="combat-player-bar" style="width:${100*duel.playerHP/duel.maxPlayerHP}%"></span></div><small id="combat-player-hp">❤️ ${duel.playerHP} / ${duel.maxPlayerHP}</small></div>
       <strong class="versus-label">VS</strong>
       <div class="combat-unit right"><strong>${duel.opponent.name}</strong><div class="hpbar"><span id="combat-enemy-bar" style="width:${100*duel.enemyHP/duel.maxEnemyHP}%"></span></div><small id="combat-enemy-hp">❤️ ${duel.enemyHP} / ${duel.maxEnemyHP}</small></div>
     </div>
+    ${end?'':`<section class="card combat-timing-panel" id="combat-timing-panel">${combatGaugeHtml()}</section>`}
     <div class="fight-arena ${end?'fight-done':''}" id="fight-arena">
       <span class="fight-live">● EN DIRECT</span><div class="ring-glow"></div><div class="ring-floor"></div>
-      <div class="fight-actor player-actor ${duel.shiny?'shiny-actor':''}${evolutionClass(level)} ${end && duel.result==='lose'?'knocked-out':''}" id="player-actor"><img class="breathing" src="${imageFor(level)}" alt="${character.name}">${evolutionDecoration(level)}</div>
-      <div class="fight-actor enemy-actor ${end && duel.result==='win'?'knocked-out':''}" id="enemy-actor"><img class="breathing" src="${imageFor(duel.opponent.level)}" alt="${duel.opponent.name}"></div>
-      ${end ? `<div class="fight-end-overlay ${duel.result}"><strong>${duel.result==='win'?'🏆 VICTOIRE !':'💥 DÉFAITE !'}</strong><span>${duel.result==='win'?'+75 pièces TV':'Reviens plus fort !'}</span></div>` : ''}
+      <div class="fight-actor player-actor ${duel.shiny?'shiny-actor':''}${duel.playerFamily==='boxe'?evolutionClass(duel.level):''} ${end&&duel.result==='lose'?'knocked-out':''}" id="player-actor">${familyVisual(duel.playerFamily,duel.level,'player')}</div>
+      <div class="fight-actor enemy-actor ${end&&duel.result==='win'?'knocked-out':''}" id="enemy-actor">${familyVisual(duel.opponent.family,duel.opponent.level,'enemy')}</div>
+      ${end?`<div class="fight-end-overlay ${duel.result}"><strong>${duel.result==='win'?'🏆 VICTOIRE !':'💥 DÉFAITE !'}</strong><span>${duel.result==='win'?'+75 pièces TV':'Retente ta chance !'}</span></div>`:''}
     </div>
-    <p class="combat-log" id="combat-log" aria-live="polite">${end ? duel.result==='win'?'Tu remportes 75 pièces !':'Tu peux réessayer sans perdre ton boxeur.' : 'Choisis une attaque pour voir ton boxeur bouger.'}</p>
-    ${end ? '<button class="action" data-action="start-duel" type="button">🔁 Refaire un combat</button><button class="action secondary" data-action="go-gym" type="button">🥊 Retour à l’entraînement</button>' :
-      `<div class="fight-actions"><button type="button" class="action secondary" data-action="punch" data-type="jab" ${duel.busy?'disabled':''}>🥊 Coup rapide</button><button type="button" class="action" data-action="punch" data-type="uppercut" ${duel.busy?'disabled':''}>💥 Uppercut</button></div><p class="subnote">Le coup rapide est moins puissant, l’uppercut inflige davantage de dégâts. L’adversaire réplique après chaque coup.</p>`}
-  `;
+    <p class="combat-log" id="combat-log" aria-live="polite">${duel.log}</p>
+    ${end?'<button class="action" type="button" data-action="start-duel" data-family="boxe">🔁 Refaire un combat</button><button class="action secondary" data-action="go-gym" type="button">🥊 Retour à l’entraînement</button>':''}
+    <p class="subnote">${playerFamily.emoji} ${playerFamily.name} : ${playerFamily.strikes} frappe(s) par tour, ${playerFamily.parries} jauge(s) de défense. ${enemyFamily.emoji} ${enemyFamily.name} : ${enemyFamily.strikes} frappe(s), ${enemyFamily.parries} parade(s).</p>`;
 }
-function startDuel() {
-  const lead = strongestFighters()[0];
-  const level = lead.level;
-  const opponent = opponentForLevel(level);
-  const maxPlayerHP = 76 + level * 24;
-  const maxEnemyHP = 58 + opponent.level * 20;
-  duel = {level, shiny:Boolean(lead.shiny), opponent, maxPlayerHP, playerHP:maxPlayerHP, maxEnemyHP, enemyHP:maxEnemyHP, busy:false, result:null};
-  currentView='combat';
-  render();
+function startDuel(requestedFamily='boxe') {
+  cancelCombatTimers();
+  const lead=strongestFighters()[0];
+  const family=game.devMode&&FIGHT_FAMILIES[requestedFamily]?requestedFamily:'boxe';
+  const opponent=chooseDuelOpponent(lead.level);
+  const p=fighterStats(family,lead.level), e=fighterStats(opponent.family,opponent.level);
+  const first=p.speed===e.speed?(Math.random()<.5?'player':'enemy'):(p.speed>e.speed?'player':'enemy');
+  duel={level:lead.level, shiny:Boolean(lead.shiny), playerFamily:family, opponent,
+    maxPlayerHP:p.hp,playerHP:p.hp, maxEnemyHP:e.hp,enemyHP:e.hp,
+    playerSpeed:p.speed,enemySpeed:e.speed, attacker:first, strikeIndex:1,
+    strikeTotal:first==='player'?p.strikes:e.strikes, gauge:null, incoming:null,
+    bestDefense:0, phase:'waiting', result:null,
+    log:`⚡ ${first==='player'?'Tu es le plus rapide : commence !':`${opponent.name} est plus rapide : prépare ta défense !`}`};
+  currentView='combat'; render();
+  window.scrollTo({top:0,behavior:'instant'});
+  const fight=duel;
+  combatLater(()=>{if(duel===fight&&!duel.result)startCombatStrike();},750);
 }
 function refreshDuelUI() {
-  if(!duel || currentView!=='combat') return;
-  for (const side of ['player','enemy']) {
-    const hp = duel[side+'HP'];
-    const max = duel['max'+(side==='player'?'Player':'Enemy')+'HP'];
-    const bar = document.getElementById('combat-'+side+'-bar');
-    const label = document.getElementById('combat-'+side+'-hp');
-    if(bar) bar.style.width = `${100*hp/max}%`;
-    if(label) label.textContent = `❤️ ${hp} / ${max}`;
+  if(!duel||currentView!=='combat')return;
+  for(const side of ['player','enemy']){
+    const value=duel[side+'HP'];
+    const total=duel[side==='player'?'maxPlayerHP':'maxEnemyHP'];
+    const bar=document.getElementById('combat-'+side+'-bar');
+    const label=document.getElementById('combat-'+side+'-hp');
+    if(bar) bar.style.width=`${Math.max(0,100*value/total)}%`;
+    if(label)label.textContent=`❤️ ${value} / ${total}`;
   }
 }
-function floatingDamage(side, amount) {
-  // Le boxeur adverse est retourné en CSS (scaleX(-1)).
-  // Le texte doit être dans l'arène pour rester toujours lisible à l'endroit.
-  const actor = document.getElementById(side + '-actor');
-  const arena = document.getElementById('fight-arena');
-  if (!actor || !arena) return;
-  const frame = arena.getBoundingClientRect();
-  const target = actor.getBoundingClientRect();
-  const bubble = document.createElement('span');
-  bubble.className = 'floating-damage';
-  bubble.textContent = `−${amount}`;
-  bubble.style.left = `${target.left - frame.left + target.width * 0.5}px`;
-  bubble.style.top = `${Math.max(20, target.top - frame.top + target.height * 0.12)}px`;
-  bubble.style.transform = 'translateX(-50%)';
+function floatingDamage(side,amount) {
+  const actor=document.getElementById(side+'-actor');
+  const arena=document.getElementById('fight-arena');
+  if(!actor||!arena)return;
+  const frame=arena.getBoundingClientRect(),target=actor.getBoundingClientRect();
+  const bubble=document.createElement('span');
+  bubble.className='floating-damage';
+  bubble.textContent=`−${amount}`;
+  bubble.style.left=`${target.left-frame.left+target.width*.5}px`;
+  bubble.style.top=`${Math.max(20,target.top-frame.top+target.height*.12)}px`;
+  bubble.style.transform='translateX(-50%)';
   arena.appendChild(bubble);
-  setTimeout(() => bubble.remove(), 850);
+  combatLater(()=>bubble.remove(),850);
 }
 function finishDuel(result) {
-  if(!duel || duel.result) return;
-  duel.result=result;
-  duel.busy=false;
-  if(result==='win') {
-    game.coins+=75;
-    game.combatWins++;
-    if (game.combatWins % WINS_PER_EGG === 0) game.pendingCombatEggs++;
-    if (game.combatWins % 2 === 0) game.gems += 2; // prototype : gemmes gagnées une victoire sur deux
+  if(!duel||duel.result)return;
+  cancelCombatTimers();
+  duel.result=result; duel.phase='finished'; duel.gauge=null;
+  duel.log=result==='win'?'🏆 Tu remportes 75 pièces !':'💥 Ce duel est perdu. Tes combattants restent dans ta collection.';
+  if(result==='win'){
+    game.coins+=75;game.combatWins++;
+    if(game.combatWins%WINS_PER_EGG===0)game.pendingCombatEggs++;
+    if(game.combatWins%2===0)game.gems+=2;
     save();
   }
-  playSound(result === 'win' ? 'win' : 'lose');
-  // Pas de faux cri de foule : on conserve seulement la mélodie de victoire.
-  render();
-  showToast(result==='win' ? (game.combatWins%WINS_PER_EGG===0?'🏆 +75 pièces et 1 œuf à récupérer !':'🏆 Bravo ! +75 pièces') : '💥 Défaite ! Aucun combattant perdu.');
+  playSound(result==='win'?'win':'lose');render();
+  showToast(result==='win'?(game.combatWins%WINS_PER_EGG===0?'🏆 +75 pièces, un œuf à récupérer !':'🏆 +75 pièces TV !'):'💥 Défaite. Pas de boxeur perdu.');
 }
-function punch(type) {
-  if(!duel || duel.busy || duel.result || currentView!=='combat') return;
+function startCombatStrike() {
+  if(!duel||duel.result||currentView!=='combat')return;
   const fight=duel;
-  const power=11 + fight.level*6;
-  const amount=type==='uppercut'?Math.round(power*1.55):power;
-  fight.busy=true;
-  document.querySelectorAll('.fight-actions button').forEach(b=>b.disabled=true);
-  const player = document.getElementById('player-actor');
-  const enemy = document.getElementById('enemy-actor');
-  const log = document.getElementById('combat-log');
-  if(log) log.textContent=type==='uppercut'?'💥 Uppercut en approche !':'🥊 Coup de poing !';
-  if(player) player.classList.add(type==='uppercut'?'uppercut':'jabbing');
-  setTimeout(()=>{
-    if(duel!==fight || fight.result) return;
-    fight.enemyHP=Math.max(0,fight.enemyHP-amount);
-    enemy?.classList.add('taking-hit');
-    playSound(type === 'uppercut' ? 'uppercut' : 'jab');
-    impactEffect(document.getElementById('fight-arena'),type === 'uppercut' ? 'BOUM !' : 'POW !','right',type === 'uppercut');
-    floatingDamage('enemy',amount);
-    refreshDuelUI();
-    if(fight.enemyHP===0){setTimeout(()=>{if(duel===fight) finishDuel('win')},500);return;}
-    if(log) log.textContent=`Tu infliges ${amount} dégâts. Attention, l'adversaire riposte !`;
-    setTimeout(()=>{
-      if(duel!==fight || fight.result) return;
-      enemy?.classList.remove('taking-hit');
-      enemy?.classList.add('jabbing');
-      const retaliation=5+Math.floor((fight.opponent?.level || fight.level)*2.5);
-      setTimeout(()=>{
-        if(duel!==fight || fight.result) return;
-        fight.playerHP=Math.max(0,fight.playerHP-retaliation);
-        player?.classList.add('taking-hit');
-        playSound('enemy');
-        impactEffect(document.getElementById('fight-arena'),'Paf !','left',false);
-        floatingDamage('player',retaliation);
-        refreshDuelUI();
-        if(fight.playerHP===0){setTimeout(()=>{if(duel===fight) finishDuel('lose')},450);return;}
-        if(log)log.textContent=`L'adversaire te rend ${retaliation} dégâts. À toi !`;
-        setTimeout(()=>{
-          if(duel!==fight || fight.result) return;
-          player?.classList.remove('jabbing','uppercut','taking-hit');
-          enemy?.classList.remove('jabbing','taking-hit');
-          fight.busy=false;
-          document.querySelectorAll('.fight-actions button').forEach(b=>b.disabled=false);
-        },450);
-      },260);
-    },400);
-  },280);
+  const actor=duel.attacker;
+  const family=actor==='player'?duel.playerFamily:duel.opponent.family;
+  duel.phase='waiting';duel.gauge=null;
+  if(actor==='player') {
+    duel.log=`🥊 À toi ! ${duel.strikeIndex}/${duel.strikeTotal} frappe(s) : vise le vert ou tente le bleu !`;
+    queueCombatGauge('attack');
+  } else {
+    const attack=aiGrade('attack',family,duel.opponent.level);
+    const multiplier=ATTACK_MULTIPLIERS[attack];
+    const base=fighterStats(family,duel.opponent.level).attack;
+    duel.incoming={grade:attack,multiplier,base};
+    if(!multiplier){
+      duel.log=`${duel.opponent.name} rate sa frappe (${duel.strikeIndex}/${duel.strikeTotal}) : tu ne prends aucun dégât !`;
+      render();playSound('miss');combatLater(()=>{if(duel===fight)advanceCombatTurn();},700);
+      return;
+    }
+    duel.log=`${duel.opponent.name} attaque (${duel.strikeIndex}/${duel.strikeTotal}) ! Prépare ta parade.`;
+    duel.bestDefense=0;
+    combatLater(()=>{if(duel===fight&&!duel.result)queueCombatGauge('defense',1);},460);
+    render();
+  }
 }
+function aiGrade(kind,family,level) {
+  // Les zones ne sont pas choisies systématiquement en fonction de leur taille :
+  // une IA imparfaite peut réussir un critique, mais aussi rater son coup.
+  const profile=FIGHT_FAMILIES[family];
+  const marks=kind==='attack'?profile.attackZones:profile.defenseZones;
+  const roll=Math.random();
+  const rank=roll<.17?3:roll<.29?2:roll<.64?1:0;
+  const lo=rank===0?0:marks[rank-1],hi=rank===3?100:marks[rank];
+  return timingGrade(kind,family,(lo+hi)/2);
+}
+function timingGrade(kind,family,progress) {
+  const profile=FIGHT_FAMILIES[family];
+  const marks=kind==='attack'?profile.attackZones:profile.defenseZones;
+  return progress<marks[0]?0:progress<marks[1]?1:progress<marks[2]?2:3;
+}
+function queueCombatGauge(kind,attempt=1) {
+  if (!duel||duel.result||currentView!=='combat')return;
+  duel.queuedGauge={kind,attempt};duel.phase='ready';duel.gauge=null;
+  render();
+}
+function activateCombatGauge(){
+  if(!duel?.queuedGauge||duel.result||currentView!=='combat')return;
+  const queued=duel.queuedGauge;duel.queuedGauge=null;
+  window.scrollTo({top:0,behavior:'instant'});
+  beginCombatGauge(queued.kind,queued.attempt);
+}
+function beginCombatGauge(kind,attempt=1) {
+  if(!duel||duel.result||currentView!=='combat')return;
+  if(combatFrame)cancelAnimationFrame(combatFrame);
+  const family=duel.playerFamily;
+  const profile=FIGHT_FAMILIES[family];
+  const gauge={kind,attempt,totalAttempts:kind==='defense'?profile.parries:1,
+    startedAt:performance.now(),duration:profile.gaugeMs,token:Math.random()};
+  duel.phase=kind;duel.gauge=gauge;
+  render();
+  function tick(){
+    if(!duel||duel.gauge!==gauge||duel.result||currentView!=='combat')return;
+    const pct=Math.min(100,100*(performance.now()-gauge.startedAt)/gauge.duration);
+    const needle=document.getElementById('combat-needle');
+    const meter=document.getElementById('combat-meter');
+    if(needle)needle.style.left=`${pct}%`;
+    if(meter)meter.setAttribute('aria-valuenow',String(Math.round(pct)));
+    if(pct>=100){completeCombatGauge(100,true);return;}
+    combatFrame=requestAnimationFrame(tick);
+  }
+  combatFrame=requestAnimationFrame(tick);
+}
+function tapCombatGauge(){
+  if(!duel||!duel.gauge||duel.result||currentView!=='combat')return;
+  const gauge=duel.gauge;
+  const pct=Math.min(100,100*(performance.now()-gauge.startedAt)/gauge.duration);
+  completeCombatGauge(pct,false);
+}
+function completeCombatGauge(progress,timedOut){
+  const fight=duel;
+  if(!fight||!fight.gauge||fight.result)return;
+  const gauge=fight.gauge;
+  const kind=gauge.kind;
+  const grade=timedOut?3:timingGrade(kind,fight.playerFamily,progress);
+  const fraction=(kind==='attack'?ATTACK_MULTIPLIERS:DEFENSE_MULTIPLIERS)[grade];
+  if(combatFrame)cancelAnimationFrame(combatFrame);
+  combatFrame=0;fight.gauge=null;fight.phase='resolving';
+  if(kind==='attack')resolvePlayerAttack(grade,fraction);
+  else resolvePlayerDefense(gauge,grade,fraction);
+}
+function combatDamage(side,amount,message,isHeavy=false){
+  const fight=duel;if(!fight||fight.result)return;
+  fight[side+'HP']=Math.max(0,fight[side+'HP']-amount);
+  fight.log=message;
+  render();
+  const actor=document.getElementById(side+'-actor');
+  const attacker=document.getElementById((side==='enemy'?'player':'enemy')+'-actor');
+  if(attacker)attacker.classList.add(isHeavy?'uppercut':'jabbing');
+  if(actor&&amount)actor.classList.add('taking-hit');
+  if(amount){
+    playSound(side==='enemy'?'jab':'enemy');
+    impactEffect(document.getElementById('fight-arena'),isHeavy?'CRITIQUE !':'POW !',side==='enemy'?'right':'left',isHeavy);
+    floatingDamage(side,amount);
+  } else playSound('miss');
+  refreshDuelUI();
+  if(!fight[side+'HP']){
+    combatLater(()=>{if(duel===fight)finishDuel(side==='enemy'?'win':'lose');},800);
+  } else combatLater(()=>{if(duel===fight&&!fight.result)advanceCombatTurn();},820);
+}
+function resolvePlayerAttack(grade,factor){
+  if(!duel)return;
+  const p=fighterStats(duel.playerFamily,duel.level);
+  const eFamily=duel.opponent.family;
+  const eProfile=FIGHT_FAMILIES[eFamily];
+  const guard=Math.max(...Array.from({length:eProfile.parries},()=>DEFENSE_MULTIPLIERS[aiGrade('defense',eFamily,duel.opponent.level)]));
+  const amount=factor>0?Math.max(1,Math.round(p.attack*factor*(1-guard))):0;
+  const label=grade===2?'🔵 CRITIQUE':grade===1?'🟢 BON COUP':grade===0?'⚪ Coup faible':'🔴 RATÉ';
+  combatDamage('enemy',amount,`${label} · ${amount} dégâts · L'adversaire a bloqué ${Math.round(guard*100)} %.`,grade===2);
+}
+function resolvePlayerDefense(gauge,grade,protection){
+  if(!duel||!duel.incoming)return;
+  duel.bestDefense=Math.max(duel.bestDefense,protection);
+  if(gauge.attempt<gauge.totalAttempts){
+    duel.log=`🛡️ Première parade : ${Math.round(protection*100)} % de protection. Tu peux tenter une deuxième fois !`;
+    const fight=duel;
+    render();
+    combatLater(()=>{if(duel===fight&&!fight.result)queueCombatGauge('defense',gauge.attempt+1);},350);
+    return;
+  }
+  const original=duel.incoming;
+  const amount=Math.max(1,Math.round(original.base*original.multiplier*(1-duel.bestDefense)));
+  const guarded=Math.round(duel.bestDefense*100);
+  const critical=original.multiplier===1.75;
+  duel.incoming=null;
+  combatDamage('player',amount,`${guarded>=90?'🟦 SUPER PARADE':guarded===0?'🟥 Aucune parade':'🛡️ Parade à '+guarded+' %'} · ${amount} dégât(s) subi(s)${critical?' · Attaque critique ennemie !':''}`,critical);
+}
+function advanceCombatTurn(){
+  if(!duel||duel.result||currentView!=='combat')return;
+  if(duel.strikeIndex<duel.strikeTotal){duel.strikeIndex++;}
+  else {
+    duel.attacker=duel.attacker==='player'?'enemy':'player';
+    duel.strikeIndex=1;
+    const family=duel.attacker==='player'?duel.playerFamily:duel.opponent.family;
+    duel.strikeTotal=FIGHT_FAMILIES[family].strikes;
+  }
+  startCombatStrike();
+}
+
 
 // Paramètres : volumes conservés sur cet appareil. La musique reste
 // désactivée pour l'instant, mais son réglage est prêt pour un futur fichier.
@@ -876,7 +1119,7 @@ function settingsScreen() {
       <button type="button" class="action reset-button" data-action="reset-account">Réinitialiser ma progression</button>
       <p class="subnote">Un double contrôle de confirmation évite toute suppression accidentelle.</p>
     </section>
-    <p class="subnote">Version 0.13 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
+    <p class="subnote">Version 0.15 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
 }
 function adjustVolume(name, value) {
   if (!['menus','effects','music'].includes(name)) return;
@@ -920,7 +1163,7 @@ function resetAccount() {
     localStorage.removeItem(SAVE_KEY);
     localStorage.removeItem('bastontv-save-v01');
   } catch (_) {}
-  game=freshSave(); training=null; duel=null; latestReward=null; viewerShift=0; viewerDelta=0;
+  cancelCombatTimers(); game=freshSave(); training=null; duel=null; latestReward=null; viewerShift=0; viewerDelta=0;
   clearLockerSelection();
   currentView='home';
   save(); render(); showToast('Nouvelle partie créée. Bonne chance !');
@@ -951,7 +1194,10 @@ function updateLiveLabels() {
 }
 function changeView(next) {
   if (training) { showToast("Termine ta séance avant de changer de salle !"); return; }
-  if (duel?.busy && currentView === "combat") { showToast("Attends la fin du coup !"); return; }
+  if (duel && currentView === 'combat' && next !== 'combat' && !duel.result) {
+    if (!window.confirm('Quitter le combat en cours ? Tu n’obtiendras pas de récompense pour ce duel.')) return;
+    cancelCombatTimers(); duel = null;
+  }
   clearLockerSelection();
   currentView = next;
   render();
@@ -1069,9 +1315,9 @@ function hitSpot() {
   }
   training.hits++;
   training.combo++;
-  const bag = document.querySelector('#bag');
+  const hangingBag = document.querySelector('#bag-swing');
   const boxer = document.querySelector('#gym-boxer');
-  if (bag) {bag.classList.remove('bag-hit'); void bag.offsetWidth; bag.classList.add('bag-hit');}
+  if (hangingBag) {hangingBag.classList.remove('bag-swing-hit'); void hangingBag.offsetWidth; hangingBag.classList.add('bag-swing-hit');}
   if (boxer) {boxer.classList.remove('gym-punch'); void boxer.offsetWidth; boxer.classList.add('gym-punch');}
   const arena = document.querySelector('#bag-arena') || document.querySelector('.bag-arena');
   const center=spotCenterInArena();
@@ -1145,8 +1391,9 @@ document.addEventListener("click", event => {
   switch(target.dataset.action) {
     case "go-gym": changeView("gym"); break;
     case "go-combat": changeView("combat"); break;
-    case "start-duel": startDuel(); break;
-    case "punch": punch(target.dataset.type); break;
+    case "start-duel": startDuel(target.dataset.family || 'boxe'); break;
+    case "combat-tap": tapCombatGauge(); break;
+    case "combat-ready": activateCombatGauge(); break;
     case "upgrade": upgrade(); break;
     case "start-training": startTraining(); break;
     case "choose-companion": chooseGymCompanion(target.dataset.fighterId); break;
@@ -1163,6 +1410,8 @@ document.addEventListener("click", event => {
     case "claim-combat-egg": claimCombatEgg(); break;
     case "claim-free-shop-egg": claimFreeShopEgg(); break;
     case "buy-egg": buyEgg(target.dataset.kind); break;
+    case "buy-protein": buyProtein(); break;
+    case "use-protein": useProtein(); break;
     case "redeem-code": redeemCode(); break;
     case "dev-coins": devAdd('coins'); break;
     case "dev-gems": devAdd('gems'); break;
@@ -1232,7 +1481,19 @@ setInterval(() => {
   }
 }, 100);
 setInterval(save, 4_000);
+setInterval(animateStudioTV, 3350);
 setInterval(()=>{if(!document.hidden && currentView==='home')tickAudience();},3200);
 setInterval(()=>{if(!document.hidden && currentView==='later' && (game.eggs.some(e=>e.startedAt) || freeShopEggRemaining()>0)) render();},1000);
-document.addEventListener("visibilitychange",()=>{ if(document.hidden) save(); else {advanceCoins(); updateLiveLabels();} syncCrowdAudio(); });
+let combatHiddenAt = 0;
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){
+    save();
+    if(duel?.gauge) combatHiddenAt=performance.now();
+  } else {
+    advanceCoins(); updateLiveLabels();
+    if(combatHiddenAt && duel?.gauge) duel.gauge.startedAt+=performance.now()-combatHiddenAt;
+    combatHiddenAt=0;
+  }
+  syncCrowdAudio();
+});
 if ("serviceWorker" in navigator) window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
