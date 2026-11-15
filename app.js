@@ -1,8 +1,8 @@
-/* Baston TV — Prototype 0.17. Aucun framework, ni serveur, ni compte requis. */
+/* Baston TV — Prototype 0.18. Aucun framework, ni serveur, ni compte requis. */
 "use strict";
 
 const SAVE_KEY = "bastontv-save-v03";
-const VERSION_LABEL = "0.17";
+const VERSION_LABEL = "0.18";
 const BASE_TRAINING_COST = 100;
 const TRAINING_INCREASE_EVERY = 3;
 const TRAINING_INCREASE_AMOUNT = 20;
@@ -21,6 +21,8 @@ const GEM_START = 10;
 const GEM_ACCEL_COST = 5;
 const GEM_ACCEL_MS = 30 * 60_000;
 const WINS_PER_EGG = 7;
+const OFFLINE_RECAP_THRESHOLD_MS = 15 * 60_000;
+const COMBAT_RESULT_HOLD_MS = 1750;
 const SHOP_NORMAL_EGG_GEMS = 35;
 const SHOP_SHINY_EGG_GEMS = 75;
 const PROTEIN_PRICE_GEMS = 500;
@@ -100,7 +102,7 @@ function freshSave() {
     gymCompanionId: null,
     eggs: [],
     shinyAlbum: {boxe:{},ninja:{}},
-    schemaVersion: 17,
+    schemaVersion: 18,
     devMode: false,
     nextFreeShopEggAt: 0,
     proteins: 0
@@ -179,6 +181,17 @@ if (!game.shinyAlbum.boxe || typeof game.shinyAlbum.boxe!=='object') {
 }
 if (!game.shinyAlbum.ninja || typeof game.shinyAlbum.ninja!=='object') game.shinyAlbum.ninja={};
 for(const f of game.fighters) if(f.shiny) game.shinyAlbum[familyOf(f)][f.level]=true;
+// v0.18 : la famille d'un œuf est fixée au moment où on le reçoit.
+// Les œufs en incubation sont respectés ; ceux encore en stock de v0.17
+// reçoivent un tirage unique pour ne plus pouvoir être changés à volonté.
+if ((game.schemaVersion||0)<18) {
+  game.eggs.forEach(egg=>{
+    if (!egg.startedAt) egg.family=randomOwnedEggFamily();
+    else if (!isFamilyUnlocked(egg.family)) egg.family='boxe';
+  });
+  game.schemaVersion=18;
+}
+for (const egg of game.eggs) if(!isFamilyUnlocked(egg.family)) egg.family='boxe';
 let currentView = "home";
 let training = null;
 let latestReward = null;
@@ -369,6 +382,18 @@ function localDayKey() {
   const d = new Date();
   return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
 }
+function randomOwnedEggFamily() {
+  // Tirage parmi les familles débloquées ET réellement présentes dans la collection.
+  const owned=FAMILY_ORDER.filter(f=>isFamilyUnlocked(f)&&game.fighters.some(member=>familyOf(member)===f));
+  const available=owned.length?owned:['boxe'];
+  return available[Math.floor(Math.random()*available.length)];
+}
+function createEgg(source, options={}) {
+  return {id:getNewId(),startedAt:null,source,family:randomOwnedEggFamily(),...options};
+}
+function hasBusyIncubator() {
+  return game.eggs.some(egg=>egg.startedAt && eggState(egg)!=='ready');
+}
 function eggState(egg, at=now()) {
   if (!egg.startedAt) return 'stock';
   const elapsed = at - egg.startedAt;
@@ -421,6 +446,20 @@ function advanceCoins() {
   game.coins += earned;
   game.lastTick = time;
   return earned;
+}
+function showOfflineRecap(elapsedMs, earned) {
+  if (elapsedMs < OFFLINE_RECAP_THRESHOLD_MS) return;
+  const dialog=document.getElementById('offline-dialog');
+  if (!dialog || dialog.open) return;
+  const effective=Math.min(OFFLINE_CAP_MS, Math.max(0,elapsedMs));
+  const channels=FAMILY_ORDER.filter(f=>isFamilyUnlocked(f))
+    .map(f=>`<div class="offline-channel"><span>${FAMILY_DATA[f].icon} ${FAMILY_DATA[f].channel}</span><b>+${format(channelIncome(f)*effective/60_000)} 🪙</b></div>`).join('');
+  document.getElementById('offline-duration').textContent=readableDuration(effective);
+  document.getElementById('offline-total').textContent=`+${format(earned)} 🪙`;
+  document.getElementById('offline-channels').innerHTML=channels;
+  document.getElementById('offline-cap-note').hidden=elapsedMs<=OFFLINE_CAP_MS;
+  if (typeof dialog.showModal==='function') dialog.showModal();
+  else {dialog.setAttribute('open','');}
 }
 function save() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(game)); }
@@ -712,7 +751,8 @@ function eggSlotHtml(egg) {
     <div class="egg-visual ${revealed?'egg-glowing':''}" aria-hidden="true">🥚</div>
     <strong>${badge} ${name}</strong>
     ${state==='incubating'||state==='glowing'?`<small class="egg-countdown" data-egg-countdown="${egg.id}">${readableDuration(eggTimeLeft(egg))}</small>`:''}
-    ${state==='stock'?`<label class="egg-family-label">Famille : <select class="egg-family-select" data-egg-choice="${egg.id}">${FAMILY_ORDER.filter(f=>isFamilyUnlocked(f)).map(f=>`<option value="${f}" ${familyOf(egg)===f?'selected':''}>${FAMILY_DATA[f].icon} ${FAMILY_DATA[f].name}</option>`).join('')}</select></label><button class="egg-button" data-action="incubate" data-egg-id="${egg.id}">Incuber</button>`:''}
+    <small class="egg-fixed-family">${FAMILY_DATA[familyOf(egg)].icon} ${FAMILY_DATA[familyOf(egg)].name} · tirage aléatoire</small>
+    ${state==='stock'?`<button class="egg-button" data-action="incubate" data-egg-id="${egg.id}" ${hasBusyIncubator()?'disabled':''}>${hasBusyIncubator()?'Incubateur occupé':'Incuber'}</button>`:''}
     ${state==='ready'?`<button class="egg-button" data-action="hatch" data-egg-id="${egg.id}">Ouvrir l'œuf</button>`:''}
     ${state==='incubating'||state==='glowing'?`<button class="egg-button egg-gems-button" data-action="gem-egg" data-egg-id="${egg.id}" ${game.gems<GEM_ACCEL_COST?'disabled':''}>💎 ${GEM_ACCEL_COST} gemmes · −30 min</button>
     ${game.devMode?`<button class="egg-test-button" data-action="test-egg" data-egg-id="${egg.id}">⏩ Accélérer (test)</button>`:''}`:''}
@@ -723,7 +763,7 @@ function laterScreen() {
   const freeReady = canClaimFreeShopEgg();
   const freeRemaining = freeShopEggRemaining();
   return `<span class="kicker">🛒 Boutique & incubateur</span><h1 class="h1">Boutique des œufs</h1>
-    <p class="muted">Ici, tu peux récupérer les œufs gagnés en combat, en acheter avec des gemmes et réclamer un œuf gratuit toutes les 24 heures.</p>
+    <p class="muted">Chaque œuf reçoit au hasard une famille que tu possèdes dès que tu le récupères ou l’achètes. Impossible de la changer ensuite !</p>
     <section class="card"><h2>🛍️ Boutique</h2>
       <div class="shop-grid">
         <div class="shop-item"><strong>🎁 Œuf gratuit</strong><small>Réclamable toutes les 24 h</small><b id="shop-free-timer">${freeReady ? 'Disponible !' : readableDuration(freeRemaining)}</b><button id="shop-free-claim" class="egg-button" data-action="claim-free-shop-egg" ${freeReady && game.eggs.length < EGG_CAP ? '' : 'disabled'}>${game.eggs.length >= EGG_CAP ? 'Stock plein' : freeReady ? 'Réclamer' : 'Patiente…'}</button></div>
@@ -731,7 +771,7 @@ function laterScreen() {
         <div class="shop-item premium"><strong>✨ Œuf shiny garanti</strong><small>Shiny assuré à l’incubation</small><b>💎 ${SHOP_SHINY_EGG_GEMS}</b><button class="egg-button egg-gems-button" data-action="buy-egg" data-kind="shiny" ${game.gems >= SHOP_SHINY_EGG_GEMS && game.eggs.length < EGG_CAP ? '' : 'disabled'}>Acheter</button></div>
         <div class="shop-item protein-shop"><strong>🥤 Protéine d'évolution</strong><small>Fait monter 1 combattant de 1 niveau, shiny compris.</small><b>💎 ${PROTEIN_PRICE_GEMS}</b><button class="egg-button" data-action="buy-protein" ${game.gems >= PROTEIN_PRICE_GEMS ? '' : 'disabled'}>Acheter</button></div>
       </div>
-      <p class="subnote">Protéines en réserve : <b>${game.proteins}</b> · Utilisation dans les Vestiaires. Les protéines ne prennent pas de place dans le stock d’œufs.</p><p class="subnote">Stock maximum : ${EGG_CAP} œufs. Un seul œuf peut incuber en même temps.</p>
+      <p class="subnote">Protéines en réserve : <b>${game.proteins}</b> · Utilisation dans les Vestiaires. Les protéines ne prennent pas de place dans le stock d’œufs.</p><p class="subnote">Stock maximum : ${EGG_CAP} œufs. Un seul œuf en cours d’incubation à la fois ; tu peux lancer le suivant dès que le premier est prêt, sans devoir l’ouvrir.</p>
     </section>
     <section class="card"><h2>🏆 Récompenses de combat</h2>
       <p class="muted">Tous les <b>${WINS_PER_EGG} duels remportés</b> : un œuf à récupérer. Victoires totales : <b>${game.combatWins}</b> · Encore <b>${WINS_PER_EGG-(game.combatWins%WINS_PER_EGG)}</b> victoire(s) avant le prochain.</p>
@@ -753,15 +793,14 @@ function laterScreen() {
 function addTestEgg(forceShiny=false) {
   if (!game.devMode) return showToast('Réservé au mode développeur.');
   if (game.eggs.length >= EGG_CAP) return showToast('Stock plein : ouvre un œuf avant d’en ajouter.');
-  game.eggs.push({id:getNewId(),startedAt:null,testForcedShiny:Boolean(forceShiny)});
+  game.eggs.push(createEgg('developer',{testForcedShiny:Boolean(forceShiny)}));
   playSound('confirm'); save(); render();
   showToast(forceShiny ? '✨ Œuf shiny de test ajouté !' : '🥚 Œuf de test ajouté !');
 }
 function incubateEgg(id) {
   const egg=game.eggs.find(e=>e.id===id);
-  if (!egg || egg.startedAt || game.eggs.some(e=>e.startedAt)) return showToast('Un seul œuf peut être dans l’incubateur à la fois. Ouvre le précédent.');
-  const selectedFamily=document.querySelector(`[data-egg-choice="${id}"]`)?.value || familyOf(egg);
-  egg.family=isFamilyUnlocked(selectedFamily)?selectedFamily:'boxe';
+  if (!egg || egg.startedAt) return;
+  if (hasBusyIncubator()) return showToast('Une autre incubation est en cours. Le prochain œuf pourra démarrer dès qu’elle sera terminée.');
   const shiny=egg.testForcedShiny || egg.guaranteedShiny || Math.random()<SHINY_RATE;
   egg.shiny=shiny;
   egg.level=shiny?(Math.random()<.05?2:1):(Math.random()<.35?2:1);
@@ -791,13 +830,13 @@ function claimCombatEgg() {
   if (!game.pendingCombatEggs) return;
   if (game.eggs.length >= EGG_CAP) return showToast('Stock plein, récupère ton œuf plus tard.');
   game.pendingCombatEggs--;
-  game.eggs.push({id:getNewId(),startedAt:null,source:'combat'});
+  game.eggs.push(createEgg('combat'));
   playSound('confirm');save();render();showToast('🥚 Œuf de victoire récupéré !');
 }
 function claimFreeShopEgg() {
   if (game.eggs.length >= EGG_CAP) return showToast('Stock plein : ouvre un œuf avant de réclamer le cadeau gratuit.');
   if (!canClaimFreeShopEgg()) return showToast(`Reviens dans ${readableDuration(freeShopEggRemaining())}.`);
-  game.eggs.push({id:getNewId(),startedAt:null,source:'free-shop'});
+  game.eggs.push(createEgg('free-shop'));
   game.nextFreeShopEggAt = now() + SHOP_FREE_EGG_COOLDOWN_MS;
   playSound('confirm'); save(); render(); showToast('🎁 Œuf gratuit récupéré !');
 }
@@ -807,7 +846,7 @@ function buyEgg(kind='normal') {
   const cost = guaranteedShiny ? SHOP_SHINY_EGG_GEMS : SHOP_NORMAL_EGG_GEMS;
   if (game.gems < cost) return showToast('Pas assez de gemmes.');
   game.gems -= cost;
-  game.eggs.push({id:getNewId(),startedAt:null,guaranteedShiny,source:'shop'});
+  game.eggs.push(createEgg('shop',{guaranteedShiny}));
   playSound('confirm'); save(); render(); showToast(guaranteedShiny ? '✨ Œuf shiny garanti acheté !' : '🥚 Œuf normal acheté !');
 }
 function buyProtein() {
@@ -871,6 +910,11 @@ function fighterStats(family, level) {
     attack:Math.round((11+level*8)*style.attack),
     strikes:style.strikes, parries:style.parries
   };
+}
+function duelCoinReward(opponent) {
+  // Récompenses entre 95 et 305 pièces : niveau + spécialité adverse.
+  const familyBonus={boxe:0,ninja:20,sumo:35};
+  return 60+35*Math.max(1,Math.min(MAX_FIGHTER_LEVEL,opponent.level))+(familyBonus[opponent.family]||0);
 }
 function chooseDuelOpponent(playerLevel) {
   const available=['boxe','ninja','sumo'].filter(type=>type!==lastOpponentFamily);
@@ -947,7 +991,8 @@ function combatScreen() {
       <span class="fight-live">● EN DIRECT</span><div class="ring-glow"></div><div class="ring-floor"></div>
       <div class="fight-actor player-actor ${duel.shiny?'shiny-actor':''}${duel.playerFamily==='boxe'?evolutionClass(duel.level):''} ${end&&duel.result==='lose'?'knocked-out':''}" id="player-actor">${familyVisual(duel.playerFamily,duel.level,'player')}</div>
       <div class="fight-actor enemy-actor ${end&&duel.result==='win'?'knocked-out':''}" id="enemy-actor">${familyVisual(duel.opponent.family,duel.opponent.level,'enemy')}</div>
-      ${end?`<div class="fight-end-overlay ${duel.result}"><strong>${duel.result==='win'?'🏆 VICTOIRE !':'💥 DÉFAITE !'}</strong><span>${duel.result==='win'?'+75 pièces TV':'Retente ta chance !'}</span></div>`:''}
+      ${!end&&duel.roundFeedback?`<div class="combat-result-banner ${duel.roundFeedback.kind}" role="status"><b>${duel.roundFeedback.title}</b><small>${duel.roundFeedback.details}</small></div>`:''}
+      ${end?`<div class="fight-end-overlay ${duel.result}"><strong>${duel.result==='win'?'🏆 VICTOIRE !':'💥 DÉFAITE !'}</strong><span>${duel.result==='win'?`+${format(duel.rewardCoins)} pièces TV`:'Retente ta chance !'}</span></div>`:''}
     </div>
     ${end?'':`<section class="card combat-timing-panel" id="combat-timing-panel">${combatGaugeHtml()}</section>`}
     <p class="combat-log" id="combat-log" aria-live="polite">${duel.log}</p>
@@ -968,7 +1013,7 @@ function startDuel() {
     maxPlayerHP:p.hp,playerHP:p.hp,maxEnemyHP:e.hp,enemyHP:e.hp,
     playerSpeed:p.speed,enemySpeed:e.speed,attacker:first,strikeIndex:1,
     strikeTotal:first==='player'?p.strikes:e.strikes,gauge:null,incoming:null,
-    bestDefense:0,phase:'waiting',result:null,
+    bestDefense:0,phase:'waiting',result:null,rewardCoins:duelCoinReward(opponent),roundFeedback:null,
     log:`⚡ ${first==='player'?'Tu es le plus rapide : commence !':`${opponent.name} est plus rapide : prépare ta défense !`}`};
   currentView='combat';render();window.scrollTo({top:0,behavior:'instant'});
   const fight=duel;combatLater(()=>{if(duel===fight&&!duel.result)startCombatStrike();},750);
@@ -1003,22 +1048,22 @@ function finishDuel(result) {
   if(!duel||duel.result)return;
   cancelCombatTimers();
   duel.result=result; duel.phase='finished'; duel.gauge=null;
-  duel.log=result==='win'?'🏆 Tu remportes 75 pièces !':'💥 Ce duel est perdu. Tes combattants restent dans ta collection.';
+  duel.log=result==='win'?`🏆 Tu remportes ${format(duel.rewardCoins)} pièces contre ${duel.opponent.name} !`:'💥 Ce duel est perdu. Tes combattants restent dans ta collection.';
   if(result==='win'){
-    game.coins+=75;game.combatWins++;
+    game.coins+=duel.rewardCoins;game.combatWins++;
     if(game.combatWins%WINS_PER_EGG===0)game.pendingCombatEggs++;
     if(game.combatWins%2===0)game.gems+=2;
     save();
   }
   playSound(result==='win'?'win':'lose');render();
-  showToast(result==='win'?(game.combatWins%WINS_PER_EGG===0?'🏆 +75 pièces, un œuf à récupérer !':'🏆 +75 pièces TV !'):'💥 Défaite. Pas de boxeur perdu.');
+  showToast(result==='win'?(game.combatWins%WINS_PER_EGG===0?`🏆 +${format(duel.rewardCoins)} pièces, un œuf à récupérer !`:`🏆 +${format(duel.rewardCoins)} pièces TV !`):'💥 Défaite. Pas de boxeur perdu.');
 }
 function startCombatStrike() {
   if(!duel||duel.result||currentView!=='combat')return;
   const fight=duel;
   const actor=duel.attacker;
   const family=actor==='player'?duel.playerFamily:duel.opponent.family;
-  duel.phase='waiting';duel.gauge=null;
+  duel.phase='waiting';duel.gauge=null;duel.roundFeedback=null;
   if(actor==='player') {
     duel.log=`🥊 À toi ! ${duel.strikeIndex}/${duel.strikeTotal} frappe(s) : vise le vert ou tente le bleu !`;
     queueCombatGauge('attack');
@@ -1029,7 +1074,8 @@ function startCombatStrike() {
     duel.incoming={grade:attack,multiplier,base};
     if(!multiplier){
       duel.log=`${duel.opponent.name} rate sa frappe (${duel.strikeIndex}/${duel.strikeTotal}) : tu ne prends aucun dégât !`;
-      render();playSound('miss');combatLater(()=>{if(duel===fight)advanceCombatTurn();},700);
+      duel.roundFeedback={kind:'miss',title:'🔴 RATÉ ENNEMI',details:'0 dégât reçu · Aucune parade nécessaire'};
+      render();playSound('miss');combatLater(()=>{if(duel===fight)advanceCombatTurn();},COMBAT_RESULT_HOLD_MS);
       return;
     }
     duel.log=`${duel.opponent.name} attaque (${duel.strikeIndex}/${duel.strikeTotal}) ! Prépare ta parade.`;
@@ -1103,10 +1149,11 @@ function completeCombatGauge(progress,timedOut){
   if(kind==='attack')resolvePlayerAttack(grade,fraction);
   else resolvePlayerDefense(gauge,grade,fraction);
 }
-function combatDamage(side,amount,message,isHeavy=false){
+function combatDamage(side,amount,message,isHeavy=false,feedback=null){
   const fight=duel;if(!fight||fight.result)return;
   fight[side+'HP']=Math.max(0,fight[side+'HP']-amount);
   fight.log=message;
+  fight.roundFeedback=feedback;
   render();
   const actor=document.getElementById(side+'-actor');
   const attacker=document.getElementById((side==='enemy'?'player':'enemy')+'-actor');
@@ -1119,8 +1166,8 @@ function combatDamage(side,amount,message,isHeavy=false){
   } else playSound('miss');
   refreshDuelUI();
   if(!fight[side+'HP']){
-    combatLater(()=>{if(duel===fight)finishDuel(side==='enemy'?'win':'lose');},800);
-  } else combatLater(()=>{if(duel===fight&&!fight.result)advanceCombatTurn();},820);
+    combatLater(()=>{if(duel===fight)finishDuel(side==='enemy'?'win':'lose');},COMBAT_RESULT_HOLD_MS);
+  } else combatLater(()=>{if(duel===fight&&!fight.result)advanceCombatTurn();},COMBAT_RESULT_HOLD_MS);
 }
 function resolvePlayerAttack(grade,factor){
   if(!duel)return;
@@ -1130,16 +1177,17 @@ function resolvePlayerAttack(grade,factor){
   const guard=Math.max(...Array.from({length:eProfile.parries},()=>DEFENSE_MULTIPLIERS[aiGrade('defense',eFamily,duel.opponent.level)]));
   const amount=factor>0?Math.max(1,Math.round(p.attack*factor*(1-guard))):0;
   const label=grade===2?'🔵 CRITIQUE':grade===1?'🟢 BON COUP':grade===0?'⚪ Coup faible':'🔴 RATÉ';
-  combatDamage('enemy',amount,`${label} · ${amount} dégâts · L'adversaire a bloqué ${Math.round(guard*100)} %.`,grade===2);
+  combatDamage('enemy',amount,`${label} · ${amount} dégâts · L'adversaire a bloqué ${Math.round(guard*100)} %.`,grade===2,{kind:grade===2?'critical':grade===3?'miss':grade===1?'success':'weak',title:label,details:`${amount} dégâts infligés · Blocage ennemi : ${Math.round(guard*100)} %`});
 }
 function resolvePlayerDefense(gauge,grade,protection){
   if(!duel||!duel.incoming)return;
   duel.bestDefense=Math.max(duel.bestDefense,protection);
   if(gauge.attempt<gauge.totalAttempts){
     duel.log=`🛡️ Première parade : ${Math.round(protection*100)} % de protection. Tu peux tenter une deuxième fois !`;
+    duel.roundFeedback={kind:grade===2?'critical':grade===3?'miss':'success',title:grade===2?'🔵 SUPER PARADE':grade===3?'🔴 PARADE RATÉE':'🛡️ PARADE RÉUSSIE',details:`${Math.round(protection*100)} % de protection · Une deuxième chance !`};
     const fight=duel;
     render();
-    combatLater(()=>{if(duel===fight&&!fight.result)queueCombatGauge('defense',gauge.attempt+1);},350);
+    combatLater(()=>{if(duel===fight&&!fight.result){duel.roundFeedback=null;queueCombatGauge('defense',gauge.attempt+1);}},1150);
     return;
   }
   const original=duel.incoming;
@@ -1147,7 +1195,7 @@ function resolvePlayerDefense(gauge,grade,protection){
   const guarded=Math.round(duel.bestDefense*100);
   const critical=original.multiplier===1.75;
   duel.incoming=null;
-  combatDamage('player',amount,`${guarded>=90?'🟦 SUPER PARADE':guarded===0?'🟥 Aucune parade':'🛡️ Parade à '+guarded+' %'} · ${amount} dégât(s) subi(s)${critical?' · Attaque critique ennemie !':''}`,critical);
+  combatDamage('player',amount,`${guarded>=90?'🟦 SUPER PARADE':guarded===0?'🟥 Aucune parade':'🛡️ Parade à '+guarded+' %'} · ${amount} dégât(s) subi(s)${critical?' · Attaque critique ennemie !':''}`,critical,{kind:guarded>=90?'critical':guarded===0?'miss':'success',title:guarded>=90?'🔵 SUPER PARADE':guarded===0?'🔴 PARADE RATÉE':'🛡️ PARADE RÉUSSIE',details:`${amount} dégâts reçus · ${guarded} % bloqués${critical?' · Critique adverse !':''}`});
 }
 function advanceCombatTurn(){
   if(!duel||duel.result||currentView!=='combat')return;
@@ -1189,7 +1237,7 @@ function settingsScreen() {
       <button type="button" class="action reset-button" data-action="reset-account">Réinitialiser ma progression</button>
       <p class="subnote">Un double contrôle de confirmation évite toute suppression accidentelle.</p>
     </section>
-    <p class="subnote">Version 0.17 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
+    <p class="subnote">Version 0.18 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
 }
 function adjustVolume(name, value) {
   if (!['menus','effects','music'].includes(name)) return;
@@ -1465,14 +1513,6 @@ document.addEventListener('input', event => {
   const volume=event.target?.dataset?.volume;
   if (volume) adjustVolume(volume,event.target.value);
 });
-document.addEventListener('change', event => {
-  const eggId=event.target?.dataset?.eggChoice;
-  if(!eggId)return;
-  const egg=game.eggs.find(e=>e.id===eggId);
-  if(egg && !egg.startedAt && isFamilyUnlocked(event.target.value)) {
-    egg.family=event.target.value;save();
-  }
-});
 // Valider un code aussi avec la touche Entrée sur ordinateur.
 document.addEventListener('keydown', event => {
   if (event.key==='Enter' && event.target?.id==='redeem-code') {
@@ -1568,9 +1608,11 @@ function showInstallHelp() {
   if (!dialog.open) dialog.showModal();
 }
 
+const initialAbsenceMs=Math.max(0,now()-(game.lastTick||now()));
 const offlineCoins = advanceCoins();
 save(); render();
-if (offlineCoins > 1) setTimeout(() => showToast(`Pendant ton absence : +${format(offlineCoins)} pièces TV !`), 500);
+if(initialAbsenceMs>=OFFLINE_RECAP_THRESHOLD_MS) showOfflineRecap(initialAbsenceMs,offlineCoins);
+else if (offlineCoins > 1) setTimeout(() => showToast(`Pendant ton absence : +${format(offlineCoins)} pièces TV !`), 500);
 setInterval(() => {
   if (document.hidden) return; // Le temps hors ligne est compté une seule fois au retour.
   advanceCoins();
@@ -1614,7 +1656,7 @@ function updateEggClocks() {
   }
   // Une transition d'incubation change les boutons, mais une liste ouverte
   // ne doit jamais être détruite sous le doigt de l'utilisateur.
-  if(stateChanged && !document.activeElement?.matches('.egg-family-select')) render();
+  if(stateChanged) render();
 }
 setInterval(updateEggClocks,1000);
 let combatHiddenAt = 0;
@@ -1623,7 +1665,9 @@ document.addEventListener("visibilitychange",()=>{
     save();
     if(duel?.gauge) combatHiddenAt=performance.now();
   } else {
-    advanceCoins(); updateLiveLabels();
+    const absenceMs=Math.max(0,now()-(game.lastTick||now()));
+    const gained=advanceCoins();updateLiveLabels();save();
+    if(absenceMs>=OFFLINE_RECAP_THRESHOLD_MS) showOfflineRecap(absenceMs,gained);
     if(combatHiddenAt && duel?.gauge) duel.gauge.startedAt+=performance.now()-combatHiddenAt;
     combatHiddenAt=0;
   }

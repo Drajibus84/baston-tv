@@ -1,4 +1,4 @@
-# Baston TV — PWA v0.17
+# Baston TV — PWA v0.18
 
 Prototype de jeu mobile et ordinateur (HTML, CSS et JavaScript, sans serveur de sauvegarde). **La sauvegarde reste `bastontv-save-v03`**, donc les personnages, pièces, gemmes, chaînes, œufs et autres ressources de la v0.16 sont conservés lors de la mise à jour.
 
@@ -14,10 +14,19 @@ Prototype de jeu mobile et ordinateur (HTML, CSS et JavaScript, sans serveur de 
 
 ## Mettre le jeu sur GitHub Pages
 
-Pour la version GitHub Pages, décompresser `BastonTV_GitHubPages_v0.17.zip`, ouvrir le dossier décompressé puis **téléverser son contenu** (pas seulement le dossier parent) à la racine du dépôt GitHub `Drajibus84/baston-tv`. Il faut notamment `index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest` et **le dossier `assets` avec les images Bourrins et Ninjas**.
+Pour la version GitHub Pages, décompresser `BastonTV_GitHubPages_v0.18.zip`, ouvrir le dossier décompressé puis **téléverser son contenu** (pas seulement le dossier parent) à la racine du dépôt GitHub `Drajibus84/baston-tv`. Il faut notamment `index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest` et **le dossier `assets` avec les images Bourrins et Ninjas**.
 
 Après **Commit changes**, attendre la fin du déploiement dans l'onglet *Actions*. Ouvrir le jeu dans le navigateur, puis fermer complètement et rouvrir la PWA installée. Il faut parfois la rouvrir deux fois pour recevoir une mise à jour du service worker. **Ne pas désinstaller l'application ni effacer les données du site** pour forcer une mise à jour : cela pourrait supprimer la sauvegarde locale.
 
 ## Tester sur ordinateur
 
-Décompresser `BastonTV_PWA_v0.17.zip` puis lancer `index.html` via Live Server (VS Code), ou servir le dossier sur un serveur local. Les fonctionnalités PWA complètes nécessitent HTTPS ou `localhost`.
+Décompresser `BastonTV_PWA_v0.18.zip` puis lancer `index.html` via Live Server (VS Code), ou servir le dossier sur un serveur local. Les fonctionnalités PWA complètes nécessitent HTTPS ou `localhost`.
+
+## v0.18 — Dernières modifications
+
+- Chaque œuf reçoit **une famille aléatoire parmi les familles débloquées et possédées dès son obtention**. La famille est affichée sur la carte et ne peut plus être changée. Les œufs stockés des anciennes parties reçoivent un tirage unique lors de la migration ; les œufs déjà incubés gardent leur famille.
+- Dès qu'une incubation est **terminée**, on peut lancer un autre œuf **sans ouvrir le précédent**. Un seul œuf non terminé à la fois ; la limite de 3 œufs en stock reste inchangée.
+- **Résumé d'absence** lorsque l'application est fermée ou en arrière-plan au moins 15 minutes : durée comptabilisée, revenu total déjà ajouté et revenus par chaîne ; calcul hors ligne plafonné à huit heures.
+- **Récompenses de combat dynamiques** : 60 + 35 × niveau de l'adversaire, +20 pièces pour un Ninja, +35 pour un Sumo (soit 95 à 305 pièces par victoire). Les gemmes et œufs gagnés en combat restent inchangés.
+- Chaque résultat attaque/défense est affiché en grand sur l'arène pendant **1,75 seconde**, avec critique/raté et dégâts réellement infligés ou subis.
+- Compatibilité de sauvegarde conservée avec la même clé `bastontv-save-v03`. Le code source est librement consultable sur GitHub Pages ; ce prototype n'a pas de serveur de compte.
