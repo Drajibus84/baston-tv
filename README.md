@@ -1,19 +1,23 @@
-# Baston TV — Prototype v0.20
+# Baston TV — Prototype v0.21.1
 
-## Nouveautés
+Cette édition remplace directement la v0.21. Tu peux passer de la v0.20 à la v0.21.1 : **aucune installation intermédiaire n’est nécessaire**.
 
-- **Quatrième famille : Robots 🤖**. Débloque Robot TV après les Sumos pour **18 000 pièces**. Six évolutions illustrées, de Bébé Boulon au Mécha Suprême ; chaîne autonome, vestiaire, équipements exclusifs, entraînement, fusions, œufs, protéines et sélection en combat.
-- **Style Robots :** robustes, vitesse intermédiaire et **blindage passif de −12 % de dégâts reçus** en plus de la parade. Une attaque et une parade par tour.
-- **Découverte progressive des adversaires :** tu peux combattre uniquement les familles déjà débloquées et la **suivante**. Exemple : avec la Boxe seule, adversaires Bourrins/Ninjas ; après les Ninjas, les Sumos s'ajoutent, etc.
-- **Chaînes secrètes :** seules les chaînes débloquées et la prochaine à débloquer sont nommées sur l'accueil. Les suivantes restent « 🔒 ??? ».
-- **Récapitulatif d'entraînement :** fenêtre de 3,5 secondes montrant immédiatement la quantité et le type des équipements gagnés. Les résultats restent également dans la salle d'entraînement.
+## Corrections graphiques
 
-## Compatibilité de sauvegarde
+- **Bébé Bourrin (niveau 1)** : illustration conservée **à l’identique** depuis la v0.20.
+- **Le Titan (niveau 5)** : nouveau dessin à **deux bras**, très musclé, **sans ceinture de champion**.
+- **Le Champion (niveau 6)** : nouveau dessin à **deux bras**, expression sérieuse et confiante, avec **grosses ceintures dorées** aux épaules et à la taille. Le nom « Le Quadri-Poings » a été remplacé pour correspondre à son nouveau design.
+- **Ninja (niveau 5)** : retrait des fragments détachés appartenant à l’évolution voisine, sans changer son apparence principale.
+- Les autres dessins des Bourrins (niveaux 2 à 4) restent identiques à la v0.21.
 
-La clé de sauvegarde reste `bastontv-save-v03`. Les anciennes collections, familles déjà débloquées, gemmes, protéines, shinies, œufs, équipements et chaînes sont préservés. Les Robots commencent verrouillés et leurs nouvelles données sont initialisées sans réinitialiser ton compte.
+## Équilibrage de la v0.21 conservé
 
-## GitHub Pages
+Défense : gris 20 %, vert 35 %, bleu 75 %, rouge 0 %. Zones vertes affinées, Robot : zones bleues légèrement agrandies et 12 % de blindage passif. La liste des protéines affiche la famille et ✨ pour les shinies, sans identifiant visible.
 
-Téléverse le **contenu de l'archive GitHub directement à la racine du dépôt** (pas son dossier enveloppe). Il faut `index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest` et `assets/`, incluant **`robot-1.png` à `robot-6.png`**. Le service worker est versionné `baston-tv-v020` pour faciliter l'actualisation de la PWA.
+## Compatibilité
 
-Pour un test local, utilise VS Code avec Live Server. Les mécanismes existants d'œufs, incubations, boutique, sons, combats et fusions restent disponibles.
+Même clé de sauvegarde `bastontv-save-v03`, mêmes niveaux, mêmes coûts, mêmes gains et mêmes familles. Changer le nom de l’évolution 6 n’altère ni les combattants existants ni leurs statistiques.
+
+## Installation sur GitHub Pages
+
+Décompresse le ZIP `BastonTV_GitHubPages_v0.21.1.zip`, puis téléverse **tous les fichiers qu’il contient à la racine** du dépôt, dont `index.html`, `app.js`, `sw.js`, `styles.css`, le dossier `assets/` et ses images. Vérifie que les images `boxeur-1.png`, `boxeur-5.png`, `boxeur-6.png` et `ninja-5.png` ont été mises à jour. Termine par **Commit changes** ; le service worker utilise le cache `baston-tv-v0211`.

@@ -1,8 +1,8 @@
-/* Baston TV — Prototype 0.20. Aucun framework, ni serveur, ni compte requis. */
+/* Baston TV — Prototype 0.21.1. Aucun framework, ni serveur, ni compte requis. */
 "use strict";
 
 const SAVE_KEY = "bastontv-save-v03";
-const VERSION_LABEL = "0.20";
+const VERSION_LABEL = "0.21.1";
 const BASE_TRAINING_COST = 100;
 const TRAINING_INCREASE_EVERY = 3;
 const TRAINING_INCREASE_AMOUNT = 20;
@@ -70,7 +70,7 @@ const LEVELS = [null,
   { name: "Le Balourd", income: 16 },
   { name: "Le Cogneur", income: 40 },
   { name: "Le Titan", income: 100 },
-  { name: "Le Quadri-Poings", income: 430 }
+  { name: "Le Champion", income: 430 }
 ];
 const MAX_FIGHTER_LEVEL = LEVELS.length - 1;
 const OPPONENT_NAMES = ["Jojo des Cordes","Momo la Mandale","Le Sparring TV","Tonton Crochet","Baston Bot","Rico le Rigolo"];
@@ -82,8 +82,8 @@ const EQUIPMENT = [
 ];
 const now = () => Date.now();
 const format = n => Math.floor(n).toLocaleString("fr-FR");
-// Bébé Bourrin est une nouvelle illustration ; les quatre dessins originaux
-// sont décalés d'un stade. Le niveau 6 conserve son effet visuel provisoire.
+// Les six niveaux Bourrins ont désormais des sprites complets ; le niveau 6
+// représente maintenant un champion à deux bras avec ses ceintures.
 const imageFor = (level,family='boxe') => `./assets/${({boxe:'boxeur',ninja:'ninja',sumo:'sumo',robot:'robot'}[family]||'boxeur')}-${Math.max(1,Math.min(level,MAX_FIGHTER_LEVEL))}.png`;
 const familyOf = f => FAMILY_ORDER.includes(f?.family)?f.family:'boxe';
 const familyLevels = family => ({boxe:LEVELS,ninja:NINJA_LEVELS,sumo:SUMO_LEVELS,robot:ROBOT_LEVELS}[family]||LEVELS);
@@ -103,8 +103,8 @@ const familyTabs = (selected,action) => `<div class="family-tabs" role="group" a
 }).join('')}</div>`;
 const evolutionClass = level => level === 6 ? ' evolution-6' : '';
 function evolutionDecoration(level,family='boxe') {
-  if (family!=='boxe') return '';
-  if (level === 6) return '<span class="evolution-emblem evolution-six" aria-hidden="true"><span>🥊</span><span>🥊</span></span>';
+  // Compatibilité des emplacements des anciennes décorations : le sprite complet
+  // fournit désormais le dessin du champion directement dans l'image.
   return '';
 }
 const getNewId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -129,7 +129,7 @@ function freshSave() {
     gymCompanionId: null,
     eggs: [],
     shinyAlbum: {boxe:{},ninja:{},sumo:{},robot:{}},
-    schemaVersion: 20,
+    schemaVersion: 21,
     devMode: false,
     nextFreeShopEggAt: 0,
     proteins: 0
@@ -229,6 +229,8 @@ for (const egg of game.eggs) if(!isFamilyUnlocked(egg.family)) egg.family='boxe'
 // v0.19 : Sumos, puis v0.20 : Robots et découverte progressive.
 if ((game.schemaVersion||0)<19) game.schemaVersion=19;
 if ((game.schemaVersion||0)<20) game.schemaVersion=20;
+// v0.21 : changement visuel et d’équilibrage uniquement, aucune ressource retirée.
+if ((game.schemaVersion||0)<21) game.schemaVersion=21;
 let currentView = "home";
 let training = null;
 let latestReward = null;
@@ -685,7 +687,7 @@ function collectionScreen() {
       <p class="muted">Tu possèdes <b>${game.proteins} protéine(s)</b>. Utilisable sur toutes les familles, même sur un shiny.</p>
       <label for="protein-fighter" class="protein-label">Choisir le bénéficiaire</label>
       <select id="protein-fighter" class="protein-select" ${!game.proteins?'disabled':''}>
-        ${proteinEligible.map(f=>`<option value="${f.id}">${FAMILY_DATA[familyOf(f)].icon} ${f.shiny?'✨ ':''}${fighterName(f)} (niv. ${f.level} → ${f.level+1}) · ${f.id.slice(-4)}</option>`).join('')}
+        ${proteinEligible.map(f=>`<option value="${f.id}">${FAMILY_DATA[familyOf(f)].icon} ${f.shiny?'✨ ':''}${fighterName(f)} (niv. ${f.level} → ${f.level+1})</option>`).join('')}
       </select>
       <button class="action pink" type="button" data-action="use-protein" ${!game.proteins||!proteinEligible.length?'disabled':''}>🥤 Utiliser une protéine</button>
       <p class="subnote">Disponible pour 500 💎 à la boutique. Le niveau 6 est le maximum.</p></section>`;
@@ -917,16 +919,15 @@ function accelerateEggTest(id) {
   save();render();showToast(eggState(egg)==='glowing'?'🌟 Surprise : cet œuf est shiny !':'🥚 Éclosion prête !');
 }
 // Combats Baston TV : nouvelle mécanique à timing (une seule traversée par jauge).
-// Les familles Ninja et Sumo sont pour l'instant jouables seulement en démonstration
-// développeur. Les illustrations de famille restent à dessiner.
+// Quatre familles jouables : Bourrins, Ninjas, Sumos, Robots.
 const FIGHT_FAMILIES = {
-  boxe: {name:'Bourrins', emoji:'🥊', speed:10, speedPerLevel:2.4, hp:1, attack:1, strikes:1, parries:1, gaugeMs:1408, attackZones:[53,78,85], defenseZones:[54,78,85]},
-  ninja: {name:'Ninjas', emoji:'🥷', speed:19, speedPerLevel:3.2, hp:.82, attack:.71, strikes:2, parries:1, gaugeMs:1232, attackZones:[50,77,84], defenseZones:[52,77,84]},
-  sumo: {name:'Sumos', emoji:'🥋', speed:5, speedPerLevel:1.6, hp:1.5, attack:.9, strikes:1, parries:2, gaugeMs:1656, attackZones:[56,80,87], defenseZones:[56,80,87]},
-  robot: {name:'Robots', emoji:'🤖', speed:8, speedPerLevel:2, hp:1.26, attack:1.06, strikes:1, parries:1, gaugeMs:1340, attackZones:[51,77,85], defenseZones:[55,79,86]}
+  boxe: {name:'Bourrins', emoji:'🥊', speed:10, speedPerLevel:2.4, hp:1, attack:1, strikes:1, parries:1, gaugeMs:1408, attackZones:[55,76,84], defenseZones:[56,76,84]},
+  ninja: {name:'Ninjas', emoji:'🥷', speed:19, speedPerLevel:3.2, hp:.82, attack:.71, strikes:2, parries:1, gaugeMs:1232, attackZones:[52,75,83], defenseZones:[54,75,83]},
+  sumo: {name:'Sumos', emoji:'🥋', speed:5, speedPerLevel:1.6, hp:1.5, attack:.9, strikes:1, parries:2, gaugeMs:1656, attackZones:[58,78,86], defenseZones:[58,78,86]},
+  robot: {name:'Robots', emoji:'🤖', speed:8, speedPerLevel:2, hp:1.26, attack:1.06, strikes:1, parries:1, gaugeMs:1340, attackZones:[53,76,87], defenseZones:[56,77,89]}
 };
 const ATTACK_MULTIPLIERS = [0.5,1,1.75,0];
-const DEFENSE_MULTIPLIERS = [0.25,0.5,0.90,0];
+const DEFENSE_MULTIPLIERS = [0.20,0.35,0.75,0];
 let lastOpponentFamily = null;
 let combatFrame = 0;
 const combatTimeouts = new Set();
@@ -986,7 +987,7 @@ function combatGaugeHtml() {
   const family = defend ? duel.playerFamily : duel.playerFamily;
   const zones=(defend?FIGHT_FAMILIES[family].defenseZones:FIGHT_FAMILIES[family].attackZones);
   const [weak,green,blue]=zones;
-  const names = defend ? ['25 %','50 %','90 %','0 %'] : ['50 %','100 %','175 %','0 %'];
+  const names = defend ? ['20 %','35 %','75 %','0 %'] : ['50 %','100 %','175 %','0 %'];
   const labels=defend?['🛡️ Parade légère','🟩 Parade moyenne','🟦 Parade renforcée','🟥 Parade ratée']:['⬜ Coup faible','🟩 Bon coup','🟦 Coup critique','🟥 Coup raté'];
   const percentages=[weak, green-weak, blue-green, 100-blue];
   return `<div class="combat-timing-title"><strong>${defend?'🛡️ DÉFENDS-TOI !':'🥊 À TON TOUR !'}</strong><span>${defend ? `Parade ${gauge.attempt}/${gauge.totalAttempts}` : `Frappe ${duel.strikeIndex}/${duel.strikeTotal}`}</span></div>
@@ -1017,7 +1018,7 @@ function combatScreen() {
       <div class="fight-actor player-actor ${selected?.shiny?'shiny-actor':''}">${familyVisual(familyOf(selected),selected.level,'player')}</div>
       <div class="fight-actor enemy-actor">${familyVisual(nextFamilyToUnlock()||FAMILY_ORDER.filter(isFamilyUnlocked).slice(-1)[0]||'boxe',Math.max(1,selected.level),'enemy')}</div><span class="ring-versus">VS</span></div>
     <button class="action" type="button" data-action="start-duel">⚡ Combattre avec ${fighterName(selected)}</button>
-    <div class="tip"><b>Jauges encore accélérées de 25 % !</b> Bleu = 175 % des dégâts en attaque, 90 % de parade en défense. Le rouge rate l'action.</div>`;
+    <div class="tip"><b>Jauges encore accélérées de 25 % !</b> Bleu = 175 % en attaque, 75 % de parade en défense. Les Robots ont des zones bleues élargies et leur blindage. Le rouge rate l'action.</div>`;
   const end=Boolean(duel.result);
   const playerFamily=FIGHT_FAMILIES[duel.playerFamily];
   const enemyFamily=FIGHT_FAMILIES[duel.opponent.family];
@@ -1237,7 +1238,7 @@ function resolvePlayerDefense(gauge,grade,protection){
   const guarded=Math.round(duel.bestDefense*100);
   const critical=original.multiplier===1.75;
   duel.incoming=null;
-  combatDamage('player',amount,`${guarded>=90?'🟦 SUPER PARADE':guarded===0?'🟥 Aucune parade':'🛡️ Parade à '+guarded+' %'} · ${amount} dégât(s) subi(s)${critical?' · Attaque critique ennemie !':''}`,critical,{kind:guarded>=90?'critical':guarded===0?'miss':'success',title:guarded>=90?'🔵 SUPER PARADE':guarded===0?'🔴 PARADE RATÉE':'🛡️ PARADE RÉUSSIE',details:`${amount} dégâts reçus · ${guarded} % bloqués${robotArmor?' · Blindage −12 %':''}${critical?' · Critique adverse !':''}`});
+  combatDamage('player',amount,`${guarded>=75?'🟦 SUPER PARADE':guarded===0?'🟥 Aucune parade':'🛡️ Parade à '+guarded+' %'} · ${amount} dégât(s) subi(s)${critical?' · Attaque critique ennemie !':''}`,critical,{kind:guarded>=75?'critical':guarded===0?'miss':'success',title:guarded>=75?'🔵 SUPER PARADE':guarded===0?'🔴 PARADE RATÉE':'🛡️ PARADE RÉUSSIE',details:`${amount} dégâts reçus · ${guarded} % bloqués${robotArmor?' · Blindage −12 %':''}${critical?' · Critique adverse !':''}`});
 }
 function advanceCombatTurn(){
   if(!duel||duel.result||currentView!=='combat')return;
