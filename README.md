@@ -1,23 +1,18 @@
-# Baston TV — Prototype v0.21.1
+# Baston TV — v0.22
 
-Cette édition remplace directement la v0.21. Tu peux passer de la v0.20 à la v0.21.1 : **aucune installation intermédiaire n’est nécessaire**.
+## Changements
 
-## Corrections graphiques
+- Ninja niveau 6 : 2 bras naturels + 2 bras d’ombre violets, sprite PNG entièrement détouré.
+- Chaînes : niveaux 9 et 10 coûtent maintenant les pièces habituelles **et** respectivement 5 puis 10 gemmes.
+- IA : elle vise plus souvent la zone verte et rate rarement (attaque : 10 % gris, 65 % vert, 20 % bleu, 5 % rouge ; défense : 15/60/20/5).
+- Journal visuel des évolutions : sur la chaîne concernée et dans la boutique, illustrations des stades déjà découverts et ??? pour les autres. Les découvertes sont enregistrées localement.
+- Recrutement : Bourrins = 4 équipements différents, Ninjas = 5, Sumos = 6, Robots = 7. Un exemplaire de chaque ; les inventaires existants sont conservés et les nouvelles catégories démarrent à zéro.
+- Entraînement : un sac de boxe, un mannequin en bois Ninja, un pilier Sumo ou une cible Robot, même mécanique des points faibles.
 
-- **Bébé Bourrin (niveau 1)** : illustration conservée **à l’identique** depuis la v0.20.
-- **Le Titan (niveau 5)** : nouveau dessin à **deux bras**, très musclé, **sans ceinture de champion**.
-- **Le Champion (niveau 6)** : nouveau dessin à **deux bras**, expression sérieuse et confiante, avec **grosses ceintures dorées** aux épaules et à la taille. Le nom « Le Quadri-Poings » a été remplacé pour correspondre à son nouveau design.
-- **Ninja (niveau 5)** : retrait des fragments détachés appartenant à l’évolution voisine, sans changer son apparence principale.
-- Les autres dessins des Bourrins (niveaux 2 à 4) restent identiques à la v0.21.
+## Sauvegardes
 
-## Équilibrage de la v0.21 conservé
+La clé de sauvegarde reste `bastontv-save-v03` ; passage du schéma en version 22, les anciens personnages et ressources sont conservés. Les éléments du journal sont déduits des niveaux présents dans les anciennes sauvegardes.
 
-Défense : gris 20 %, vert 35 %, bleu 75 %, rouge 0 %. Zones vertes affinées, Robot : zones bleues légèrement agrandies et 12 % de blindage passif. La liste des protéines affiche la famille et ✨ pour les shinies, sans identifiant visible.
+## Installation GitHub Pages
 
-## Compatibilité
-
-Même clé de sauvegarde `bastontv-save-v03`, mêmes niveaux, mêmes coûts, mêmes gains et mêmes familles. Changer le nom de l’évolution 6 n’altère ni les combattants existants ni leurs statistiques.
-
-## Installation sur GitHub Pages
-
-Décompresse le ZIP `BastonTV_GitHubPages_v0.21.1.zip`, puis téléverse **tous les fichiers qu’il contient à la racine** du dépôt, dont `index.html`, `app.js`, `sw.js`, `styles.css`, le dossier `assets/` et ses images. Vérifie que les images `boxeur-1.png`, `boxeur-5.png`, `boxeur-6.png` et `ninja-5.png` ont été mises à jour. Termine par **Commit changes** ; le service worker utilise le cache `baston-tv-v0211`.
+Décompresser la version GitHub et envoyer les **fichiers contenus à la racine** du dépôt : index.html, app.js, styles.css, sw.js, manifest.webmanifest, .nojekyll, ainsi que le dossier assets et ses sous-dossiers. Settings → Pages doit pointer sur main / (root). Après publication, fermer puis rouvrir l’application PWA pour recharger le cache v022.
