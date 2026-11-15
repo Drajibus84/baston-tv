@@ -1,18 +1,27 @@
-# Baston TV — v0.22
+# Baston TV — Prototype v0.23.2
 
-## Changements
+Jeu PWA mobile, HTML/CSS/JavaScript sans framework. Les parties restent dans le navigateur via la clé `bastontv-save-v03`.
 
-- Ninja niveau 6 : 2 bras naturels + 2 bras d’ombre violets, sprite PNG entièrement détouré.
-- Chaînes : niveaux 9 et 10 coûtent maintenant les pièces habituelles **et** respectivement 5 puis 10 gemmes.
-- IA : elle vise plus souvent la zone verte et rate rarement (attaque : 10 % gris, 65 % vert, 20 % bleu, 5 % rouge ; défense : 15/60/20/5).
-- Journal visuel des évolutions : sur la chaîne concernée et dans la boutique, illustrations des stades déjà découverts et ??? pour les autres. Les découvertes sont enregistrées localement.
-- Recrutement : Bourrins = 4 équipements différents, Ninjas = 5, Sumos = 6, Robots = 7. Un exemplaire de chaque ; les inventaires existants sont conservés et les nouvelles catégories démarrent à zéro.
-- Entraînement : un sac de boxe, un mannequin en bois Ninja, un pilier Sumo ou une cible Robot, même mécanique des points faibles.
+## Nouveauté v0.23.2 : Muay Thaï offensif et vol de vie
 
-## Sauvegardes
+- Deux frappes par tour (contre une auparavant).
+- Aucune parade : pas de jauge de défense pour le Muay Thaï, qu'il soit joué par le joueur ou par l'IA.
+- Vol de vie : 35 % des **dégâts réellement infligés**, arrondi à l'entier inférieur ; aucun soin sur un coup raté, et jamais plus que les PV maximum.
+- Statistiques : davantage de PV et une bonne attaque pour compenser l'absence totale de parade.
+- Au combat, les soins apparaissent avec « 💚 +X », ainsi que dans le résultat du coup.
+- Les autres familles continuent à utiliser leurs parades habituelles. Les Muay Thaï ennemis ne bloquent pas les attaques.
 
-La clé de sauvegarde reste `bastontv-save-v03` ; passage du schéma en version 22, les anciens personnages et ressources sont conservés. Les éléments du journal sont déduits des niveaux présents dans les anciennes sauvegardes.
+## Rappels des nouveautés v0.23 et v0.23.1
 
-## Installation GitHub Pages
+- Famille Muay Thaï : six personnages, transformations hybrides dragons aux stades avancés, huit équipements de recrutement, chaîne Muay TV et vestiaire distinct. Déblocage après Robot TV pour 42 000 pièces.
+- Teintes bleu/turquoise/vert des personnages et des décors Muay Thaï (v0.23.1).
+- Journal shiny avec les illustrations découvertes dans la boutique.
+- Protéines filtrées par famille dans chaque vestiaire.
+- Coûts supplémentaires en gemmes des chaînes affichés uniquement quand le prochain niveau les exige.
+- Ninja niveau 6 avec deux vrais bras, deux bras violets d'ombre, yeux blancs et sans aura autour des bras.
 
-Décompresser la version GitHub et envoyer les **fichiers contenus à la racine** du dépôt : index.html, app.js, styles.css, sw.js, manifest.webmanifest, .nojekyll, ainsi que le dossier assets et ses sous-dossiers. Settings → Pages doit pointer sur main / (root). Après publication, fermer puis rouvrir l’application PWA pour recharger le cache v022.
+## Installation sur GitHub Pages
+
+Décompresser l'archive spéciale GitHub, puis envoyer **son contenu** à la racine du dépôt : `index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest`, `.nojekyll` et le dossier `assets/` avec ses sous-dossiers. La publication Pages doit pointer sur `main / (root)`.
+
+La nouvelle version utilise le cache PWA `baston-tv-v0232`. Après le déploiement, ouvrir le jeu dans le navigateur, fermer complètement la PWA installée et la rouvrir. Ne pas désinstaller l'application ni effacer ses données pour éviter de perdre la sauvegarde locale.

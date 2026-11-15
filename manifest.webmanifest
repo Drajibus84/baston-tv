@@ -1,7 +1,7 @@
 {
   "name": "Baston TV",
   "short_name": "Baston TV",
-  "description": "Collectionne, entraîne et fais fusionner des boxeurs !",
+  "description": "Collectionne, entraîne et fais fusionner tes combattants de Baston TV !",
   "lang": "fr-FR",
   "start_url": "./index.html",
   "scope": "./",
