@@ -447,3 +447,12 @@
 .offline-channel{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:9px 4px;border-bottom:1px solid #d9c6ea}
 .offline-channel b{white-space:nowrap}
 .offline-dialog form .action{margin-top:16px}
+
+/* --- v0.19 : 3 chaînes et famille Sumo --- */
+.family-tabs{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.family-tab{font-size:12px;padding:11px 3px;white-space:normal}
+.tv-stage.tv-sumo{background:radial-gradient(ellipse at 50% 10%,#ffda86 0%,#bb6d55 52%,#59325b 100%)}
+.tv-sumo .fighter-onair{border-color:#ffe279}
+.locker-room.sumo-locker{background:linear-gradient(180deg,#cc9d80,#e0be91 55%,#ab6c50)!important}
+.sumo-locker .locker-floor{background:linear-gradient(180deg,#fceab9 0 17%,#ac623d 20% 54%,#5c3229 80%);border-top-color:#fff4cd;border-bottom-color:#3c1e1b}
+@media(max-width:370px){.family-tabs{gap:4px}.family-tab{font-size:11px;padding:10px 2px}}

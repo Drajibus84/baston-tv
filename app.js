@@ -1,8 +1,8 @@
-/* Baston TV — Prototype 0.18. Aucun framework, ni serveur, ni compte requis. */
+/* Baston TV — Prototype 0.19. Aucun framework, ni serveur, ni compte requis. */
 "use strict";
 
 const SAVE_KEY = "bastontv-save-v03";
-const VERSION_LABEL = "0.18";
+const VERSION_LABEL = "0.19";
 const BASE_TRAINING_COST = 100;
 const TRAINING_INCREASE_EVERY = 3;
 const TRAINING_INCREASE_AMOUNT = 20;
@@ -22,7 +22,7 @@ const GEM_ACCEL_COST = 5;
 const GEM_ACCEL_MS = 30 * 60_000;
 const WINS_PER_EGG = 7;
 const OFFLINE_RECAP_THRESHOLD_MS = 15 * 60_000;
-const COMBAT_RESULT_HOLD_MS = 1750;
+const COMBAT_RESULT_HOLD_MS = 1500;
 const SHOP_NORMAL_EGG_GEMS = 35;
 const SHOP_SHINY_EGG_GEMS = 75;
 const PROTEIN_PRICE_GEMS = 500;
@@ -31,10 +31,12 @@ const CHANNEL_MAX_LEVEL = 10;
 const CHANNEL_UPGRADE_COSTS = [0,450,850,1350,2100,3100,4500,6300,8500,11200];
 const CHANNEL_BONUSES = [0,0,8,15,22,35,45,60,72,86,100];
 const NINJA_UNLOCK_COST = 2000;
-const FAMILY_ORDER = ['boxe','ninja'];
+const SUMO_UNLOCK_COST = 6500;
+const FAMILY_ORDER = ['boxe','ninja','sumo'];
 const FAMILY_DATA = {
   boxe:{name:'Bourrins',singular:'Bourrin',channel:'Boxe TV',icon:'🥊',unlockCost:0,trainingMultiplier:1},
-  ninja:{name:'Ninjas',singular:'Ninja',channel:'Ninja TV',icon:'🥷',unlockCost:NINJA_UNLOCK_COST,trainingMultiplier:1.35}
+  ninja:{name:'Ninjas',singular:'Ninja',channel:'Ninja TV',icon:'🥷',unlockCost:NINJA_UNLOCK_COST,trainingMultiplier:1.35},
+  sumo:{name:'Sumos',singular:'Sumo',channel:'Sumo TV',icon:'🥋',unlockCost:SUMO_UNLOCK_COST,trainingMultiplier:1.65}
 };
 const NINJA_LEVELS = [null,
   {name:'Bébé Ninja',income:4},{name:'Le Novice',income:9},{name:'Le Filou',income:22},
@@ -43,6 +45,14 @@ const NINJA_LEVELS = [null,
 const NINJA_EQUIPMENT = [
   {id:'masque',label:'Masque',icon:'🥷'}, {id:'kunai',label:'Kunaï',icon:'🗡️'},
   {id:'tenue',label:'Tenue ninja',icon:'🥋'}, {id:'sandales',label:'Sandales',icon:'👣'}
+];
+const SUMO_LEVELS = [null,
+  {name:'Bébé Sumo',income:5},{name:'Le Poussin',income:12},{name:'L’Apprenti',income:29},
+  {name:'Le Rikishi',income:72},{name:'Le Colosse',income:170},{name:'Le Yokozuna',income:600}
+];
+const SUMO_EQUIPMENT = [
+  {id:'mawashi',label:'Mawashi',icon:'🥋'}, {id:'chignon',label:'Chignon',icon:'🎀'},
+  {id:'bandages',label:'Bandages',icon:'🩹'}, {id:'corde',label:'Corde sacrée',icon:'🪢'}
 ];
 const LEVELS = [null,
   { name: "Bébé Bourrin", income: 3 },
@@ -64,19 +74,19 @@ const now = () => Date.now();
 const format = n => Math.floor(n).toLocaleString("fr-FR");
 // Bébé Bourrin est une nouvelle illustration ; les quatre dessins originaux
 // sont décalés d'un stade. Le niveau 6 conserve son effet visuel provisoire.
-const imageFor = (level,family='boxe') => `./assets/${family==='ninja'?'ninja':'boxeur'}-${Math.max(1,Math.min(level,MAX_FIGHTER_LEVEL))}.png`;
-const familyOf = f => f?.family==='ninja'?'ninja':'boxe';
-const familyLevels = family => family==='ninja'?NINJA_LEVELS:LEVELS;
-const familyEquipment = family => family==='ninja'?NINJA_EQUIPMENT:EQUIPMENT;
+const imageFor = (level,family='boxe') => `./assets/${family==='ninja'?'ninja':family==='sumo'?'sumo':'boxeur'}-${Math.max(1,Math.min(level,MAX_FIGHTER_LEVEL))}.png`;
+const familyOf = f => FAMILY_ORDER.includes(f?.family)?f.family:'boxe';
+const familyLevels = family => family==='ninja'?NINJA_LEVELS:family==='sumo'?SUMO_LEVELS:LEVELS;
+const familyEquipment = family => family==='ninja'?NINJA_EQUIPMENT:family==='sumo'?SUMO_EQUIPMENT:EQUIPMENT;
 const fighterName = f => familyLevels(familyOf(f))[f.level]?.name || 'Combattant';
 const incomeFor = f => familyLevels(familyOf(f))[f.level]?.income||0;
-const isFamilyUnlocked = family => family==='boxe'||Boolean(game.unlockedFamilies?.ninja);
+const isFamilyUnlocked = family => family==='boxe'||Boolean(game.unlockedFamilies?.[family]);
 const familyFighters = family => game.fighters.filter(f=>familyOf(f)===family);
 const sortFighters = (a,b) => b.level-a.level || Number(b.shiny)-Number(a.shiny);
 const familyTabs = (selected,action) => `<div class="family-tabs" role="group" aria-label="Choix de la famille">${FAMILY_ORDER.map(f=>`<button type="button" class="family-tab ${selected===f?'active':''}" data-action="${action}" data-family="${f}" ${isFamilyUnlocked(f)||action==='select-channel'?'':'disabled'}>${FAMILY_DATA[f].icon} ${FAMILY_DATA[f].name}${isFamilyUnlocked(f)?'':' 🔒'}</button>`).join('')}</div>`;
 const evolutionClass = level => level === 6 ? ' evolution-6' : '';
 function evolutionDecoration(level,family='boxe') {
-  if (family==='ninja') return '';
+  if (family!=='boxe') return '';
   if (level === 6) return '<span class="evolution-emblem evolution-six" aria-hidden="true"><span>🥊</span><span>🥊</span></span>';
   return '';
 }
@@ -86,12 +96,12 @@ function freshSave() {
   return {
     coins: 600,
     studioLevel: 1,
-    channelLevels: {boxe:1,ninja:1},
-    unlockedFamilies: {boxe:true,ninja:false},
+    channelLevels: {boxe:1,ninja:1,sumo:1},
+    unlockedFamilies: {boxe:true,ninja:false,sumo:false},
     selectedChannel:'boxe', selectedLockerFamily:'boxe', selectedGymFamily:'boxe',
     selectedCombatId:null,
-    equipmentByFamily:{ninja:Object.fromEntries(NINJA_EQUIPMENT.map(x=>[x.id,0]))},
-    sessionsByFamily:{boxe:0,ninja:0},
+    equipmentByFamily:{ninja:Object.fromEntries(NINJA_EQUIPMENT.map(x=>[x.id,0])),sumo:Object.fromEntries(SUMO_EQUIPMENT.map(x=>[x.id,0]))},
+    sessionsByFamily:{boxe:0,ninja:0,sumo:0},
     lastTick: now(),
     equipment: Object.fromEntries(EQUIPMENT.map(x => [x.id, 0])),
     fighters: [{ id: getNewId(), level: 1, family:"boxe" }],
@@ -101,8 +111,8 @@ function freshSave() {
     pendingCombatEggs: 0,
     gymCompanionId: null,
     eggs: [],
-    shinyAlbum: {boxe:{},ninja:{}},
-    schemaVersion: 18,
+    shinyAlbum: {boxe:{},ninja:{},sumo:{}},
+    schemaVersion: 19,
     devMode: false,
     nextFreeShopEggAt: 0,
     proteins: 0
@@ -148,21 +158,24 @@ if ((game.schemaVersion||0)<16) {
 }
 // v0.17 : évolution d'interface uniquement, aucune transformation de collection.
 if ((game.schemaVersion||0)<17) game.schemaVersion=17;
-if (!game.channelLevels || typeof game.channelLevels!=='object') game.channelLevels={boxe:1,ninja:1};
+if (!game.channelLevels || typeof game.channelLevels!=='object') game.channelLevels={boxe:1,ninja:1,sumo:1};
 for (const family of FAMILY_ORDER) game.channelLevels[family]=Math.max(1,Math.min(CHANNEL_MAX_LEVEL,Math.floor(game.channelLevels[family]||1)));
-if (!game.unlockedFamilies || typeof game.unlockedFamilies!=='object') game.unlockedFamilies={boxe:true,ninja:false};
+if (!game.unlockedFamilies || typeof game.unlockedFamilies!=='object') game.unlockedFamilies={boxe:true,ninja:false,sumo:false};
 game.unlockedFamilies.boxe=true;
 if (game.fighters.some(f=>f.family==='ninja')) game.unlockedFamilies.ninja=true;
+if (game.fighters.some(f=>f.family==='sumo')) game.unlockedFamilies.sumo=true;
 if (!game.equipmentByFamily || typeof game.equipmentByFamily!=='object') game.equipmentByFamily={};
-if (!game.equipmentByFamily.ninja) game.equipmentByFamily.ninja={};
-for (const eq of NINJA_EQUIPMENT) if (!Number.isFinite(game.equipmentByFamily.ninja[eq.id])) game.equipmentByFamily.ninja[eq.id]=0;
-if (!game.sessionsByFamily || typeof game.sessionsByFamily!=='object') game.sessionsByFamily={boxe:game.sessions||0,ninja:0};
+for (const fam of ['ninja','sumo']) {
+  if (!game.equipmentByFamily[fam]) game.equipmentByFamily[fam]={};
+  for (const eq of familyEquipment(fam)) if (!Number.isFinite(game.equipmentByFamily[fam][eq.id])) game.equipmentByFamily[fam][eq.id]=0;
+}
+if (!game.sessionsByFamily || typeof game.sessionsByFamily!=='object') game.sessionsByFamily={boxe:game.sessions||0,ninja:0,sumo:0};
 for (const family of FAMILY_ORDER) game.sessionsByFamily[family]=Math.max(0,Math.floor(game.sessionsByFamily[family]||0));
 for (const key of ['selectedChannel','selectedLockerFamily','selectedGymFamily']) {
   if (!FAMILY_ORDER.includes(game[key])||!isFamilyUnlocked(game[key])) game[key]='boxe';
 }
 if (game.selectedCombatId && !game.fighters.some(f=>f.id===game.selectedCombatId)) game.selectedCombatId=null;
-game.fighters.forEach(f => { f.shiny=Boolean(f.shiny); if(f.family!=='ninja')f.family='boxe'; });
+game.fighters.forEach(f => { f.shiny=Boolean(f.shiny); if(!FAMILY_ORDER.includes(f.family))f.family='boxe'; });
 if (typeof game.devMode !== 'boolean') game.devMode = false;
 if (!Number.isSafeInteger(game.proteins) || game.proteins < 0) game.proteins = 0;
 if (!Number.isFinite(game.nextFreeShopEggAt) || game.nextFreeShopEggAt < 0) game.nextFreeShopEggAt = 0;
@@ -179,7 +192,7 @@ if (!game.shinyAlbum.boxe || typeof game.shinyAlbum.boxe!=='object') {
   game.shinyAlbum={boxe:{},ninja:{}};
   for(const [level,found] of Object.entries(oldAlbum)) if(found && /^\d+$/.test(level))game.shinyAlbum.boxe[level]=true;
 }
-if (!game.shinyAlbum.ninja || typeof game.shinyAlbum.ninja!=='object') game.shinyAlbum.ninja={};
+for(const fam of ['ninja','sumo']) if(!game.shinyAlbum[fam] || typeof game.shinyAlbum[fam]!=='object')game.shinyAlbum[fam]={};
 for(const f of game.fighters) if(f.shiny) game.shinyAlbum[familyOf(f)][f.level]=true;
 // v0.18 : la famille d'un œuf est fixée au moment où on le reçoit.
 // Les œufs en incubation sont respectés ; ceux encore en stock de v0.17
@@ -192,6 +205,8 @@ if ((game.schemaVersion||0)<18) {
   game.schemaVersion=18;
 }
 for (const egg of game.eggs) if(!isFamilyUnlocked(egg.family)) egg.family='boxe';
+// v0.19 : Sumos ajoutés en troisième famille, sans réinitialiser la collection.
+if ((game.schemaVersion||0)<19) game.schemaVersion=19;
 let currentView = "home";
 let training = null;
 let latestReward = null;
@@ -412,13 +427,13 @@ function readableDuration(ms) {
 }
 function channelLevel(family) {return game.channelLevels?.[family]||1;}
 function channelBonusPercent(family) {return CHANNEL_BONUSES[channelLevel(family)]||0;}
-function nextChannelUpgradeCost(family) {const level=channelLevel(family);return level>=CHANNEL_MAX_LEVEL?null:Math.round((CHANNEL_UPGRADE_COSTS[level]||11200)*(family==='ninja'?1.3:1));}
+function nextChannelUpgradeCost(family) {const level=channelLevel(family);return level>=CHANNEL_MAX_LEVEL?null:Math.round((CHANNEL_UPGRADE_COSTS[level]||11200)*(family==='ninja'?1.3:family==='sumo'?1.6:1));}
 function channelIncome(family) {
   if(!isFamilyUnlocked(family))return 0;
   const twoBest=familyFighters(family).sort(sortFighters).slice(0,2);
   return twoBest.reduce((sum,f)=>sum+incomeFor(f),0)*(1+channelBonusPercent(family)/100)*(1+shinyBonusPercent()/100);
 }
-function inventoryFor(family) {return family==='ninja'?game.equipmentByFamily.ninja:game.equipment;}
+function inventoryFor(family) {return family==='boxe'?game.equipment:(game.equipmentByFamily[family] ||= Object.fromEntries(familyEquipment(family).map(x=>[x.id,0])));}
 function freeShopEggRemaining() { return Math.max(0, (game.nextFreeShopEggAt || 0) - now()); }
 function canClaimFreeShopEgg() { return freeShopEggRemaining() <= 0; }
 function opponentForLevel(playerLevel) {
@@ -560,11 +575,11 @@ function homeScreen() {
   return `<span class="kicker">📡 Les chaînes TV</span><h1 class="h1">Bienvenue au studio !</h1>
     <p class="muted">Chaque famille possède sa chaîne, ses deux vedettes et ses propres améliorations. Les revenus des chaînes se cumulent, même quand tu regardes une autre chaîne.</p>
     ${familyTabs(family,'select-channel')}
-    ${!unlocked?`<section class="card unlock-panel"><h2>🥷 Débloquer Ninja TV</h2><p class="muted">Ouvre le dojo Ninja, reçois un Bébé Ninja et débloque ses équipements, son vestiaire et sa chaîne.</p>
-      <div class="price"><span>Prix de déblocage</span><strong>🪙 ${format(NINJA_UNLOCK_COST)}</strong></div>
-      <button class="action pink" data-action="unlock-ninja" ${game.coins<NINJA_UNLOCK_COST?'disabled':''}>🥷 Débloquer les Ninjas</button>
-      <p class="subnote">Il te manque ${format(Math.max(0,NINJA_UNLOCK_COST-game.coins))} pièce(s) si tu ne peux pas encore acheter.</p></section>`:
-      `<div class="tv-stage ${family==='ninja'?'tv-ninja':''}" aria-label="${info.channel} en direct">
+    ${!unlocked?`<section class="card unlock-panel"><h2>${info.icon} Débloquer ${info.channel}</h2><p class="muted">${family==='sumo'?'Ouvre l’écurie des Sumos et reçois ton premier Bébé Sumo ! Leur spécialité : deux parades par tour, beaucoup de vie mais peu de vitesse.':'Ouvre le dojo Ninja, reçois un Bébé Ninja et débloque ses équipements, son vestiaire et sa chaîne.'}</p>
+      <div class="price"><span>Prix de déblocage</span><strong>🪙 ${format(info.unlockCost)}</strong></div>
+      <button class="action pink" data-action="unlock-family" data-family="${family}" ${game.coins<info.unlockCost?'disabled':''}>${info.icon} Débloquer ${info.name}</button>
+      <p class="subnote">${game.coins<info.unlockCost?`Il te manque ${format(info.unlockCost-game.coins)} pièce(s).`:'Famille disponible à l’achat !'}</p></section>`:
+      `<div class="tv-stage ${family==='ninja'?'tv-ninja':family==='sumo'?'tv-sumo':''}" aria-label="${info.channel} en direct">
         <span class="live-label">● EN DIRECT</span>
         <div class="viewers-live" aria-label="Audience simulée en direct">👥 <b id="viewers-live">${format(currentAudience())}</b> <small id="viewers-change" class="viewers-change up">• 0</small></div>
         <div class="stage-logo">${info.icon} ${info.channel.toUpperCase()}</div>
@@ -607,7 +622,7 @@ function gymScreen() {
     <button class="action gym-start-cta" type="button" data-action="start-training" ${game.coins<trainingCost(family)?'disabled':''}>🥊 Commencer la séance ${FAMILY_DATA[family].icon} · ${format(trainingCost(family))} 🪙</button>
     ${gymRosterHtml(companion)}
     <div class="stat-grid"><div class="stat"><small>⏱ Durée</small><b>20 s</b></div><div class="stat"><small>🪙 Prix ${FAMILY_DATA[family].name}</small><b>${format(trainingCost(family))}</b></div></div>
-    <p class="subnote">Les sessions Ninja coûtent 35 % de plus que celles de Boxe, à progression équivalente. Chaque famille a sa propre progression du prix.</p>
+    <p class="subnote">Les séances Ninja coûtent 35 % de plus que la Boxe, et les Sumos 65 % de plus. Chaque famille a son propre prix évolutif.</p>
     ${result}
     <div class="tip"><b>Récompenses :</b> 0 équipement pour un mauvais score ; 1 à 2 en général, jusqu'à 4 avec un excellent combo sans faute.</div>`;
 }
@@ -634,7 +649,7 @@ function collectionScreen() {
     <section class="card locker-panel"><h2>📡 Sur ${info.channel}</h2><p class="subnote">Les vedettes de cette chaîne peuvent également être fusionnées.</p>
       <div class="locker-onair-strip">${onAir.map((f,i)=>lockerCharacter(f,i,true)).join('')}${onAir.length<2?'<span class="locker-air-empty">Emplacement libre</span>':''}</div></section>
     <section class="card locker-panel"><div class="locker-heading"><h2>🏠 Vestiaire ${info.name} (${others.length})</h2><span class="locker-help">☝️ Glisser pour fusionner</span></div>
-      <div class="locker-room ${family==='ninja'?'ninja-locker':''}" id="locker-room" style="--locker-height:${Math.max(305,rows*155+95)}px">
+      <div class="locker-room ${family==='ninja'?'ninja-locker':family==='sumo'?'sumo-locker':''}" id="locker-room" style="--locker-height:${Math.max(305,rows*155+95)}px">
         <div class="locker-poster">${info.channel.toUpperCase()} ★ CLUB</div><div class="locker-bench"></div>
         ${Array.from({length:rows},(_,i)=>`<div class="locker-floor" style="bottom:${12+i*155}px"></div>`).join('')}
         ${display.map((f,i)=>lockerCharacter(f,i)).join('')}
@@ -643,9 +658,9 @@ function collectionScreen() {
       <p class="subnote">Normal + normal → normal · Shiny + shiny → shiny. Pas de mélange entre les familles.</p></section>
     <section class="card"><h2>🎁 Équipements ${info.name}</h2><div class="eq-grid">${equipment.map(item=>`<div class="eq-item ${inventory[item.id]>0?'ready':''}"><span>${item.icon} ${item.label}</span><b>×${inventory[item.id]}</b></div>`).join('')}</div>
       <button class="action" type="button" data-action="recruit" ${ready?'':'disabled'}>${info.icon} Recruter : ${familyLevels(family)[1].name}</button>
-      <p class="subnote">Consomme un exemplaire de chaque équipement ${info.name}. Les équipements de Boxe et Ninja ne sont pas interchangeables.</p></section>
+      <p class="subnote">Consomme un exemplaire de chaque équipement ${info.name}. Les équipements sont propres à chaque famille.</p></section>
     <section class="card protein-panel"><h2>🥤 Protéine d'évolution</h2>
-      <p class="muted">Tu possèdes <b>${game.proteins} protéine(s)</b>. Utilisable sur les deux familles, même sur un shiny.</p>
+      <p class="muted">Tu possèdes <b>${game.proteins} protéine(s)</b>. Utilisable sur toutes les familles, même sur un shiny.</p>
       <label for="protein-fighter" class="protein-label">Choisir le bénéficiaire</label>
       <select id="protein-fighter" class="protein-select" ${!game.proteins?'disabled':''}>
         ${proteinEligible.map(f=>`<option value="${f.id}">${FAMILY_DATA[familyOf(f)].icon} ${f.shiny?'✨ ':''}${fighterName(f)} (niv. ${f.level} → ${f.level+1}) · ${f.id.slice(-4)}</option>`).join('')}
@@ -751,7 +766,7 @@ function eggSlotHtml(egg) {
     <div class="egg-visual ${revealed?'egg-glowing':''}" aria-hidden="true">🥚</div>
     <strong>${badge} ${name}</strong>
     ${state==='incubating'||state==='glowing'?`<small class="egg-countdown" data-egg-countdown="${egg.id}">${readableDuration(eggTimeLeft(egg))}</small>`:''}
-    <small class="egg-fixed-family">${FAMILY_DATA[familyOf(egg)].icon} ${FAMILY_DATA[familyOf(egg)].name} · tirage aléatoire</small>
+    <small class="egg-fixed-family">${FAMILY_DATA[familyOf(egg)].icon} Œuf de ${FAMILY_DATA[familyOf(egg)].name}</small>
     ${state==='stock'?`<button class="egg-button" data-action="incubate" data-egg-id="${egg.id}" ${hasBusyIncubator()?'disabled':''}>${hasBusyIncubator()?'Incubateur occupé':'Incuber'}</button>`:''}
     ${state==='ready'?`<button class="egg-button" data-action="hatch" data-egg-id="${egg.id}">Ouvrir l'œuf</button>`:''}
     ${state==='incubating'||state==='glowing'?`<button class="egg-button egg-gems-button" data-action="gem-egg" data-egg-id="${egg.id}" ${game.gems<GEM_ACCEL_COST?'disabled':''}>💎 ${GEM_ACCEL_COST} gemmes · −30 min</button>
@@ -763,7 +778,7 @@ function laterScreen() {
   const freeReady = canClaimFreeShopEgg();
   const freeRemaining = freeShopEggRemaining();
   return `<span class="kicker">🛒 Boutique & incubateur</span><h1 class="h1">Boutique des œufs</h1>
-    <p class="muted">Chaque œuf reçoit au hasard une famille que tu possèdes dès que tu le récupères ou l’achètes. Impossible de la changer ensuite !</p>
+    <p class="muted">Chaque œuf reçoit une famille au hasard parmi celles que tu possèdes. Elle est fixée dès son obtention et indiquée sur l'œuf.</p>
     <section class="card"><h2>🛍️ Boutique</h2>
       <div class="shop-grid">
         <div class="shop-item"><strong>🎁 Œuf gratuit</strong><small>Réclamable toutes les 24 h</small><b id="shop-free-timer">${freeReady ? 'Disponible !' : readableDuration(freeRemaining)}</b><button id="shop-free-claim" class="egg-button" data-action="claim-free-shop-egg" ${freeReady && game.eggs.length < EGG_CAP ? '' : 'disabled'}>${game.eggs.length >= EGG_CAP ? 'Stock plein' : freeReady ? 'Réclamer' : 'Patiente…'}</button></div>
@@ -927,7 +942,7 @@ function chooseDuelOpponent(playerLevel) {
 function familyVisual(family, level, side) {
   if (family==='boxe') return `<img class="breathing" src="${imageFor(level)}" alt="Boxeur de la famille Bourrins">${evolutionDecoration(level)}`;
   if (family==='ninja') return `<img class="breathing" src="${imageFor(level,'ninja')}" alt="Combattant Ninja">`;
-  if (family==='sumo') return `<div class="fight-style-preview sumo" role="img" aria-label="Personnage sumo provisoire"><div class="sumo-doodle"><span class="sumo-face">😤</span><div class="sumo-body"><span class="sumo-belt"></span></div><div class="sumo-feet"></div></div><small>SUMOS</small></div>`;
+  if (family==='sumo') return `<img class="breathing" src="${imageFor(level,'sumo')}" alt="Combattant Sumo">`;
   return `<div class="fight-style-preview ninja" role="img" aria-label="Personnage ninja provisoire"><span>🥷</span><small>NINJAS</small></div>`;
 }
 function combatGaugeHtml() {
@@ -962,7 +977,7 @@ function combatGaugeHtml() {
 function combatScreen() {
   const selected=game.fighters.find(f=>f.id===game.selectedCombatId)||[...game.fighters].sort(sortFighters)[0];
   if (!duel) return `<span class="kicker">🎬 Arène Baston TV</span><h1 class="h1">Combat au timing !</h1>
-    <p class="muted">Choisis ton combattant, puis lance le duel. Les Ninjas sont rapides et frappent deux fois, mais sont moins résistants.</p>
+    <p class="muted">Choisis ton combattant. Bourrins équilibrés, Ninjas rapides (2 frappes), Sumos résistants (2 parades).</p>
     <section class="card combat-select-panel"><h2>⚔️ Mon combattant</h2>
       <div class="combat-choice-summary">
         <img src="${imageFor(selected.level,familyOf(selected))}" alt="">
@@ -974,7 +989,7 @@ function combatScreen() {
         <img src="${imageFor(f.level,familyOf(f))}" alt=""><span>${FAMILY_DATA[familyOf(f)].icon} ${fighterName(f)} ${f.shiny?'✨':''}<small>Niv. ${f.level} · ${FIGHT_FAMILIES[familyOf(f)].strikes} frappe(s) / tour</small></span>${selected?.id===f.id?'✓':''}</button>`).join('')}</div>`:''}</section>
     <div class="fight-arena fight-preview"><div class="ring-glow"></div><div class="ring-floor"></div>
       <div class="fight-actor player-actor ${selected?.shiny?'shiny-actor':''}">${familyVisual(familyOf(selected),selected.level,'player')}</div>
-      <div class="fight-actor enemy-actor">${familyVisual('ninja',Math.max(1,selected.level),'enemy')}</div><span class="ring-versus">VS</span></div>
+      <div class="fight-actor enemy-actor">${familyVisual('sumo',Math.max(1,selected.level),'enemy')}</div><span class="ring-versus">VS</span></div>
     <button class="action" type="button" data-action="start-duel">⚡ Combattre avec ${fighterName(selected)}</button>
     <div class="tip"><b>Jauges encore accélérées de 25 % !</b> Bleu = 175 % des dégâts en attaque, 90 % de parade en défense. Le rouge rate l'action.</div>`;
   const end=Boolean(duel.result);
@@ -1237,7 +1252,7 @@ function settingsScreen() {
       <button type="button" class="action reset-button" data-action="reset-account">Réinitialiser ma progression</button>
       <p class="subnote">Un double contrôle de confirmation évite toute suppression accidentelle.</p>
     </section>
-    <p class="subnote">Version 0.18 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
+    <p class="subnote">Version 0.19 · Sauvegarde locale dans ce navigateur. Les codes sont visibles dans les fichiers publics du jeu : ils ne constituent pas une protection sécurisée.</p>`;
 }
 function adjustVolume(name, value) {
   if (!['menus','effects','music'].includes(name)) return;
@@ -1330,18 +1345,24 @@ function upgrade() {
   game.coins-=cost;game.channelLevels[family]++;
   save();render();showToast(`📺 ${FAMILY_DATA[family].channel} niveau ${channelLevel(family)} : +${channelBonusPercent(family)} % !`);
 }
-function unlockNinja() {
-  if(game.unlockedFamilies.ninja||game.coins<NINJA_UNLOCK_COST)return;
-  advanceCoins(); if(game.coins<NINJA_UNLOCK_COST)return;
-  game.coins-=NINJA_UNLOCK_COST;
-  game.unlockedFamilies.ninja=true;
-  const first={id:getNewId(),family:'ninja',level:1,shiny:false};
-  game.fighters.push(first);game.selectedChannel='ninja';game.selectedLockerFamily='ninja';game.selectedGymFamily='ninja';
-  save();render();playSound('recruit');showToast('🥷 Ninja TV débloquée ! Ton premier Bébé Ninja rejoint le dojo.');
+function unlockFamily(family) {
+  if (!['ninja','sumo'].includes(family) || isFamilyUnlocked(family)) return;
+  const info=FAMILY_DATA[family],cost=info.unlockCost;
+  advanceCoins();
+  if(game.coins<cost)return showToast(`Il manque ${format(cost-game.coins)} pièces pour débloquer ${info.name}.`);
+  game.coins-=cost;
+  game.unlockedFamilies[family]=true;
+  game.channelLevels[family]=Math.max(1,game.channelLevels[family]||1);
+  const first={id:getNewId(),family,level:1,shiny:false};
+  game.fighters.push(first);
+  game.selectedChannel=family;game.selectedLockerFamily=family;game.selectedGymFamily=family;
+  game.gymCompanionId=null;
+  save();render();playSound('recruit');showToast(`${info.icon} ${info.channel} débloquée ! ${fighterName(first)} rejoint ton équipe.`);
 }
+
 function selectFamily(screen,family) {
   if(!FAMILY_ORDER.includes(family))return;
-  if(screen!=='home'&&!isFamilyUnlocked(family))return showToast('Débloque le dojo Ninja sur la page TV !');
+  if(screen!=='home'&&!isFamilyUnlocked(family))return showToast('Débloque cette famille sur la page TV !');
   const key={home:'selectedChannel',gym:'selectedGymFamily',collection:'selectedLockerFamily'}[screen];
   if(!key)return;
   game[key]=family; if(screen==='gym')game.gymCompanionId=null;
@@ -1539,7 +1560,7 @@ document.addEventListener("click", event => {
     case "combat-tap": tapCombatGauge(); break;
     case "combat-ready": activateCombatGauge(); break;
     case "upgrade": upgrade(); break;
-    case "unlock-ninja": unlockNinja(); break;
+    case "unlock-family": unlockFamily(target.dataset.family); break;
     case "select-channel": selectFamily('home',target.dataset.family); break;
     case "select-gym-family": selectFamily('gym',target.dataset.family); break;
     case "select-locker-family": selectFamily('collection',target.dataset.family); break;
