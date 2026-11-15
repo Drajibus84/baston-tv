@@ -9,12 +9,12 @@
   <link rel="icon" type="image/png" href="./assets/icon-192.png">
   <link rel="apple-touch-icon" href="./assets/icon-192.png">
   <link rel="stylesheet" href="./styles.css">
-  <title>Baston TV — Prototype 0.19</title>
+  <title>Baston TV — Prototype 0.20</title>
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-icon" aria-hidden="true">📺</span><div><strong>BASTON <span>TV</span></strong><small>Prototype 0.19</small></div></div>
+      <div class="brand"><span class="brand-icon" aria-hidden="true">📺</span><div><strong>BASTON <span>TV</span></strong><small>Prototype 0.20</small></div></div>
       <div class="header-tools"><button class="settings-toggle" type="button" data-view="settings" title="Paramètres" aria-label="Ouvrir les paramètres">⚙️</button><button id="sound-toggle" class="sound-toggle" type="button" data-action="toggle-sound" aria-pressed="true" aria-label="Couper les sons" title="Activer ou couper les sons">🔊</button><div class="money gem-balance" aria-label="Solde de gemmes"><span aria-hidden="true">💎</span><strong id="gems-live">10</strong></div><div class="money" aria-label="Solde de pièces"><span aria-hidden="true">🪙</span><strong id="coins-live">600</strong></div></div>
     </header>
     <main id="screen" class="screen" aria-live="polite"></main>
@@ -37,6 +37,12 @@
     <div id="offline-channels" class="offline-channels"></div>
     <p id="offline-cap-note" class="offline-note" hidden>Les gains hors ligne sont limités à 8 heures.</p>
     <form method="dialog"><button type="submit" class="action">Super, continuer ! 🥊</button></form>
+  </dialog>
+  <dialog class="training-reward-dialog" id="training-reward-dialog" aria-labelledby="training-reward-title">
+    <h2 id="training-reward-title">🎁 Équipements gagnés</h2>
+    <p class="muted">Voici ce que tu as récupéré pendant ta séance :</p>
+    <div id="training-reward-items" class="training-reward-items"></div>
+    <form method="dialog"><button class="action" type="submit">Super !</button></form>
   </dialog>
   <script defer src="./app.js"></script>
 </body>

@@ -456,3 +456,19 @@
 .locker-room.sumo-locker{background:linear-gradient(180deg,#cc9d80,#e0be91 55%,#ab6c50)!important}
 .sumo-locker .locker-floor{background:linear-gradient(180deg,#fceab9 0 17%,#ac623d 20% 54%,#5c3229 80%);border-top-color:#fff4cd;border-bottom-color:#3c1e1b}
 @media(max-width:370px){.family-tabs{gap:4px}.family-tab{font-size:11px;padding:10px 2px}}
+
+/* v0.20 — quatrième famille : Robots, chaînes mystérieuses, bilan d'entraînement */
+.family-tabs{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.family-mystery{display:flex;align-items:center;justify-content:center;opacity:.65;border-style:dashed!important;background:#ece5f1!important;color:#76648a!important;cursor:default;font-weight:800}
+.tv-stage.tv-robot{background:radial-gradient(ellipse at 48% 10%,#a6fcff 0%,#179db7 28%,#213d99 68%,#251456 100%)}
+.tv-robot .fighter-onair{border-color:#ffba45}
+.locker-room.robot-locker{background:linear-gradient(180deg,#9ac3d5,#628da5 55%,#34516e)!important}
+.robot-locker .locker-floor{background:linear-gradient(180deg,#92dce9 0 14%,#46718a 18% 48%,#26415f 80%);border-top-color:#d6fcff;border-bottom-color:#1c334d}
+.robot-locker .locker-poster{background:#d7f8ff;color:#0c4f7e;border-color:#2a9ec5}
+.training-reward-dialog{border:3px solid #7b39c4;border-radius:22px;background:linear-gradient(160deg,#fffaf0,#f1e3ff);color:#28114d;width:min(92vw,430px);padding:19px;box-shadow:0 12px 40px #16072a88}
+.training-reward-dialog::backdrop{background:#230b4888}
+.training-reward-dialog h2{font-size:21px;margin:0 0 8px}
+.training-reward-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:15px 0}
+.training-reward-item{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;border:2px solid #dcc6fa;background:white;border-radius:14px;padding:10px 5px}
+.training-reward-item span{font-size:36px}.training-reward-item strong{font-size:12px}.training-reward-item b{color:#6322a8;font-size:19px}
+@media(max-width:365px){.family-tab{font-size:11px}}
